@@ -14,7 +14,9 @@ impl Tool for ListRecipesTool {
     }
 
     fn description(&self) -> &str {
-        "List all recipes in the justfile with their parameters, documentation, groups, and dependencies"
+        "List recipes in the justfile categorized by agent permission. Returns two categories: \
+         'carte_blanche' (always-allowed, can be run freely) and 'bureaucratic' (per-request, \
+         require user confirmation). Recipes marked never-allowed are excluded entirely."
     }
 
     fn input_schema(&self) -> Value {
@@ -58,9 +60,25 @@ impl Tool for ListRecipesTool {
 
         let recipes = dump.get("recipes").cloned().unwrap_or(json!({}));
 
-        let mut result = Vec::new();
+        let mut carte_blanche = Vec::new();
+        let mut bureaucratic = Vec::new();
+
         if let Some(obj) = recipes.as_object() {
             for (name, recipe) in obj {
+                let mut agent_permission = "per-request".to_string();
+                if let Some(attrs) = recipe.get("attributes").and_then(|a| a.as_array()) {
+                    for attr in attrs {
+                        if let Some(value) = attr.get("agents").and_then(|v| v.as_str()) {
+                            agent_permission = value.to_string();
+                            break;
+                        }
+                    }
+                }
+
+                if agent_permission == "never-allowed" {
+                    continue;
+                }
+
                 let mut entry = json!({
                     "name": name,
                 });
@@ -101,23 +119,18 @@ impl Tool for ListRecipesTool {
                     entry["private"] = priv_val.clone();
                 }
 
-                let mut agent_permission = "per-request".to_string();
-                if let Some(attrs) = recipe.get("attributes").and_then(|a| a.as_array()) {
-                    for attr in attrs {
-                        if let Some(value) = attr.get("agents").and_then(|v| v.as_str()) {
-                            agent_permission = value.to_string();
-                            break;
-                        }
-                    }
+                match agent_permission.as_str() {
+                    "always-allowed" => carte_blanche.push(entry),
+                    _ => bureaucratic.push(entry),
                 }
-                entry["agent_permission"] = json!(agent_permission);
-
-                result.push(entry);
             }
         }
 
-        let output_json =
-            serde_json::to_string_pretty(&result).unwrap_or_else(|_| "[]".to_string());
+        let output_json = serde_json::to_string_pretty(&json!({
+            "carte_blanche": carte_blanche,
+            "bureaucratic": bureaucratic,
+        }))
+        .unwrap_or_else(|_| "{}".to_string());
 
         Ok(ToolResult::text(output_json))
     }
