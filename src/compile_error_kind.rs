@@ -91,6 +91,9 @@ pub(crate) enum CompileErrorKind<'src> {
   Internal {
     message: String,
   },
+  InvalidAgentsAttributeValue {
+    value: String,
+  },
   InvalidAttribute {
     item_kind: &'static str,
     item_name: &'src str,

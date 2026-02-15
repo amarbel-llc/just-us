@@ -10,6 +10,7 @@ use super::*;
 #[strum_discriminants(derive(EnumString, Ord, PartialOrd))]
 #[strum_discriminants(strum(serialize_all = "kebab-case"))]
 pub(crate) enum Attribute<'src> {
+  Agents(StringLiteral<'src>),
   Arg {
     help: Option<StringLiteral<'src>>,
     long: Option<StringLiteral<'src>>,
@@ -61,7 +62,7 @@ impl AttributeDiscriminant {
       | Self::Windows => 0..=0,
       Self::Confirm | Self::Doc => 0..=1,
       Self::Script => 0..=usize::MAX,
-      Self::Arg | Self::Extension | Self::Group | Self::WorkingDirectory => 1..=1,
+      Self::Agents | Self::Arg | Self::Extension | Self::Group | Self::WorkingDirectory => 1..=1,
       Self::Env => 2..=2,
       Self::Metadata => 1..=usize::MAX,
     }
@@ -120,6 +121,18 @@ impl<'src> Attribute<'src> {
     }
 
     let attribute = match discriminant {
+      AttributeDiscriminant::Agents => {
+        let value = arguments.into_iter().next().unwrap();
+        match value.cooked.as_ref() {
+          "always-allowed" | "never-allowed" | "per-request" => {}
+          _ => {
+            return Err(name.error(CompileErrorKind::InvalidAgentsAttributeValue {
+              value: value.cooked.to_string(),
+            }));
+          }
+        }
+        Self::Agents(value)
+      }
       AttributeDiscriminant::Arg => {
         let arg = arguments.into_iter().next().unwrap();
 
@@ -308,7 +321,8 @@ impl Display for Attribute<'_> {
       | Self::Script(None)
       | Self::Unix
       | Self::Windows => {}
-      Self::Confirm(Some(argument))
+      Self::Agents(argument)
+      | Self::Confirm(Some(argument))
       | Self::Doc(Some(argument))
       | Self::Extension(argument)
       | Self::Group(argument)

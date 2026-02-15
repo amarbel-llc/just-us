@@ -101,6 +101,17 @@ impl Tool for ListRecipesTool {
                     entry["private"] = priv_val.clone();
                 }
 
+                let mut agent_permission = "per-request".to_string();
+                if let Some(attrs) = recipe.get("attributes").and_then(|a| a.as_array()) {
+                    for attr in attrs {
+                        if let Some(value) = attr.get("agents").and_then(|v| v.as_str()) {
+                            agent_permission = value.to_string();
+                            break;
+                        }
+                    }
+                }
+                entry["agent_permission"] = json!(agent_permission);
+
                 result.push(entry);
             }
         }

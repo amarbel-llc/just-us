@@ -1,4 +1,4 @@
-use crate::helpers::run_just;
+use crate::helpers::{get_agent_permission, run_just};
 use async_trait::async_trait;
 use mcp_server::{Context, Tool, ToolError, ToolResult};
 use serde_json::{json, Value};
@@ -60,6 +60,30 @@ impl Tool for RunRecipeTool {
 
         let working_dir = arguments.get("working_directory").and_then(|v| v.as_str());
         let justfile = arguments.get("justfile").and_then(|v| v.as_str());
+
+        let permission = get_agent_permission(
+            &self.just_binary,
+            recipe,
+            working_dir,
+            justfile,
+        )
+        .await;
+
+        match permission.as_str() {
+            "never-allowed" => {
+                return Ok(ToolResult::error(format!(
+                    "Recipe `{recipe}` has attribute `[agents(\"never-allowed\")]` and cannot be run by agents"
+                )));
+            }
+            "per-request" => {
+                return Ok(ToolResult::error(format!(
+                    "Recipe `{recipe}` requires user confirmation before an agent can run it (agents attribute is `per-request`). \
+                     Please ask the user for permission to run this recipe."
+                )));
+            }
+            _ => {}
+        }
+
         let dry_run = arguments
             .get("dry_run")
             .and_then(|v| v.as_bool())

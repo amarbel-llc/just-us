@@ -211,6 +211,11 @@ impl Display for CompileError<'_> {
         "Internal error, this may indicate a bug in just: {message}\n\
            consider filing an issue: https://github.com/casey/just/issues/new"
       ),
+      InvalidAgentsAttributeValue { value } => write!(
+        f,
+        "Attribute `agents` got invalid value `{value}`, \
+         expected `always-allowed`, `never-allowed`, or `per-request`",
+      ),
       InvalidAttribute {
         item_name,
         item_kind,

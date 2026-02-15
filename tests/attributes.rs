@@ -447,3 +447,139 @@ fn env_attribute_duplicate_error() {
     )
     .failure();
 }
+
+#[test]
+fn agents_attribute_always_allowed() {
+  Test::new()
+    .justfile(
+      "
+        [agents('always-allowed')]
+        foo:
+          echo bar
+      ",
+    )
+    .stdout("bar\n")
+    .stderr("echo bar\n")
+    .success();
+}
+
+#[test]
+fn agents_attribute_never_allowed() {
+  Test::new()
+    .justfile(
+      "
+        [agents('never-allowed')]
+        foo:
+          echo bar
+      ",
+    )
+    .stdout("bar\n")
+    .stderr("echo bar\n")
+    .success();
+}
+
+#[test]
+fn agents_attribute_per_request() {
+  Test::new()
+    .justfile(
+      "
+        [agents('per-request')]
+        foo:
+          echo bar
+      ",
+    )
+    .stdout("bar\n")
+    .stderr("echo bar\n")
+    .success();
+}
+
+#[test]
+fn agents_attribute_invalid_value() {
+  Test::new()
+    .justfile(
+      "
+        [agents('invalid')]
+        foo:
+          echo bar
+      ",
+    )
+    .stderr(
+      "
+  error: Attribute `agents` got invalid value `invalid`, expected `always-allowed`, `never-allowed`, or `per-request`
+   ——▶ justfile:1:2
+    │
+  1 │ [agents('invalid')]
+    │  ^^^^^^
+",
+    )
+    .failure();
+}
+
+#[test]
+fn agents_attribute_missing_argument() {
+  Test::new()
+    .justfile(
+      "
+        [agents]
+        foo:
+          echo bar
+      ",
+    )
+    .stderr(
+      "
+  error: Attribute `agents` got 0 arguments but takes 1 argument
+   ——▶ justfile:1:2
+    │
+  1 │ [agents]
+    │  ^^^^^^
+",
+    )
+    .failure();
+}
+
+#[test]
+fn agents_attribute_duplicate() {
+  Test::new()
+    .justfile(
+      "
+        [agents('always-allowed')]
+        [agents('never-allowed')]
+        foo:
+          echo bar
+      ",
+    )
+    .stderr(
+      "
+  error: Recipe attribute `agents` first used on line 1 is duplicated on line 2
+   ——▶ justfile:2:2
+    │
+  2 │ [agents('never-allowed')]
+    │  ^^^^^^
+",
+    )
+    .failure();
+}
+
+#[test]
+fn agents_attribute_invalid_on_alias() {
+  Test::new()
+    .justfile(
+      "
+        foo:
+          echo bar
+
+        [agents('always-allowed')]
+        alias bar := foo
+      ",
+    )
+    .stderr(
+      "
+  error: Alias `bar` has invalid attribute `agents`
+   ——▶ justfile:5:7
+    │
+  5 │ alias bar := foo
+    │       ^^^
+",
+    )
+    .failure();
+}
