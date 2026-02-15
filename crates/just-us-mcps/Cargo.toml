@@ -1,11 +1,11 @@
 [package]
-name = "just-mcp"
+name = "just-us-mcps"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [[bin]]
-name = "just-mcp-server"
+name = "just-us-mcp-server"
 path = "src/main.rs"
 
 [dependencies]

@@ -7,7 +7,7 @@ use std::process::Command;
 use tools::{DumpJustfileTool, ListRecipesTool, ListVariablesTool, RunRecipeTool, ShowRecipeTool};
 
 #[derive(Parser)]
-#[command(name = "just-mcp-server")]
+#[command(name = "just-us-mcp-server")]
 #[command(about = "MCP server providing justfile operations as tools")]
 struct Cli {
     /// Path to the just binary
@@ -20,7 +20,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Install just-mcp-server as MCP server in Claude Code
+    /// Install just-us-mcp-server as MCP server in Claude Code
     InstallClaude,
 }
 
@@ -50,12 +50,12 @@ fn install_claude() -> Result<(), Box<dyn std::error::Error>> {
             "add",
             "just",
             "--",
-            exe_path.to_str().unwrap_or("just-mcp-server"),
+            exe_path.to_str().unwrap_or("just-us-mcp-server"),
         ])
         .status()?;
 
     if status.success() {
-        println!("Successfully installed just-mcp-server as MCP server 'just'");
+        println!("Successfully installed just-us-mcp-server as MCP server 'just'");
         println!("To verify, run: claude mcp list");
         Ok(())
     } else {
@@ -64,7 +64,7 @@ fn install_claude() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_server(just_binary: String) -> Result<(), Box<dyn std::error::Error>> {
-    let server = McpServer::builder("just-mcp-server", env!("CARGO_PKG_VERSION"))
+    let server = McpServer::builder("just-us-mcp-server", env!("CARGO_PKG_VERSION"))
         .with_tool(ListRecipesTool {
             just_binary: just_binary.clone(),
         })
