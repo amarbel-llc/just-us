@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [[bin]]
-name = "just-us-mcp-server"
+name = "just-us-agents"
 path = "src/main.rs"
 
 [dependencies]

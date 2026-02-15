@@ -93,11 +93,6 @@ path = "src/main.rs"
 name = "just"
 test = false
 
-[[bin]]
-path = "src/agents.rs"
-name = "just-us-agents"
-test = false
-
 # The public documentation is minimal and doesn't change between
 # platforms, so we only build them for linux on docs.rs to save
 # their build machines some cycles.
