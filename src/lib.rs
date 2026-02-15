@@ -93,6 +93,7 @@ pub(crate) use {
     suggestion::Suggestion,
     switch::Switch,
     table::Table,
+    tap_output::TapTestResult,
     thunk::Thunk,
     token::Token,
     token_kind::TokenKind,
@@ -281,6 +282,7 @@ mod subcommand;
 mod suggestion;
 mod switch;
 mod table;
+mod tap_output;
 mod thunk;
 mod token;
 mod token_kind;

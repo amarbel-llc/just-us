@@ -209,6 +209,10 @@ impl<'src> Justfile<'src> {
       });
     }
 
+    if config.tap {
+      return self.run_tap(config, &dotenv, &scopes, search, invocations);
+    }
+
     let ran = Ran::default();
     for invocation in invocations {
       Self::run_recipe(
@@ -224,6 +228,66 @@ impl<'src> Justfile<'src> {
     }
 
     Ok(())
+  }
+
+  fn run_tap(
+    &self,
+    config: &Config,
+    dotenv: &BTreeMap<String, String>,
+    scopes: &BTreeMap<String, (&Self, &Scope<'src, '_>)>,
+    search: &Search,
+    invocations: Vec<Invocation<'src, '_>>,
+  ) -> RunResult<'src> {
+    let mut stdout = io::stdout().lock();
+    let count = invocations.len();
+
+    tap_output::write_version(&mut stdout).map_err(|io_error| Error::StdoutIo { io_error })?;
+    tap_output::write_plan(&mut stdout, count).map_err(|io_error| Error::StdoutIo { io_error })?;
+
+    let mut failures = 0;
+
+    for (i, invocation) in invocations.iter().enumerate() {
+      let ran = Ran::default();
+      let result = Self::run_recipe(
+        &invocation.arguments,
+        config,
+        dotenv,
+        false,
+        &ran,
+        invocation.recipe,
+        scopes,
+        search,
+      );
+
+      let test_result = match result {
+        Ok(()) => TapTestResult {
+          number: i + 1,
+          name: invocation.recipe.name().into(),
+          ok: true,
+          error_message: None,
+          exit_code: None,
+        },
+        Err(ref error) => {
+          failures += 1;
+          TapTestResult {
+            number: i + 1,
+            name: invocation.recipe.name().into(),
+            ok: false,
+            error_message: Some(format!("{}", error.color_display(Color::never()))),
+            exit_code: error.code(),
+          }
+        }
+      };
+
+      tap_output::write_test_point(&mut stdout, &test_result)
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
+    }
+
+    if failures > 0 {
+      Err(Error::TapFailure { count, failures })
+    } else {
+      Ok(())
+    }
   }
 
   pub(crate) fn check_unstable(&self, config: &Config) -> RunResult<'src> {

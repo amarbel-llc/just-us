@@ -220,6 +220,10 @@ pub(crate) enum Error<'src> {
   StdoutIo {
     io_error: io::Error,
   },
+  TapFailure {
+    count: usize,
+    failures: usize,
+  },
   TempdirIo {
     recipe: &'src str,
     io_error: io::Error,
@@ -271,6 +275,7 @@ impl<'src> Error<'src> {
         ..
       }
       | Self::Interrupted { signal } => Some(signal.code()),
+      Self::TapFailure { .. } => Some(1),
       _ => None,
     }
   }
@@ -302,7 +307,7 @@ impl<'src> Error<'src> {
       Error::Code {
         print_message: false,
         ..
-      }
+      } | Error::TapFailure { .. }
     )
   }
 
@@ -745,6 +750,9 @@ impl ColorDisplay for Error<'_> {
       }
       StdoutIo { io_error } => {
         write!(f, "I/O error writing to stdout: {io_error}")?;
+      }
+      TapFailure { count, failures } => {
+        write!(f, "{failures} of {count} TAP test(s) failed")?;
       }
       TempdirIo { recipe, io_error } => {
         write!(

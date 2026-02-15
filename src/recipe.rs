@@ -212,11 +212,11 @@ impl<'src, D> Recipe<'src, D> {
     let prefix = color.prefix();
     let suffix = color.suffix();
 
-    if context.config.verbosity.loquacious() {
+    if context.config.verbosity.loquacious() && !context.config.tap {
       eprintln!("{prefix}===> Running recipe `{}`...{suffix}", self.name);
     }
 
-    if context.config.explain {
+    if context.config.explain && !context.config.tap {
       if let Some(doc) = self.doc() {
         eprintln!("{prefix}#### {doc}{suffix}");
       }
@@ -285,11 +285,12 @@ impl<'src, D> Recipe<'src, D> {
         continue;
       }
 
-      if config.dry_run
-        || config.verbosity.loquacious()
-        || !((quiet_line ^ self.quiet)
-          || (context.module.settings.quiet && !self.no_quiet())
-          || config.verbosity.quiet())
+      if !config.tap
+        && (config.dry_run
+          || config.verbosity.loquacious()
+          || !((quiet_line ^ self.quiet)
+            || (context.module.settings.quiet && !self.no_quiet())
+            || config.verbosity.quiet()))
       {
         let color = if config.highlight {
           config.color.command(config.command_color)
@@ -322,7 +323,7 @@ impl<'src, D> Recipe<'src, D> {
         cmd.args(positional);
       }
 
-      if config.verbosity.quiet() {
+      if config.verbosity.quiet() || config.tap {
         cmd.stderr(Stdio::null());
         cmd.stdout(Stdio::null());
       }
@@ -386,15 +387,17 @@ impl<'src, D> Recipe<'src, D> {
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
-    if let Some(timestamp) = config.timestamp() {
-      let color = if config.highlight {
-        config.color.command(config.command_color)
-      } else {
-        config.color
-      }
-      .stderr();
+    if !config.tap {
+      if let Some(timestamp) = config.timestamp() {
+        let color = if config.highlight {
+          config.color.command(config.command_color)
+        } else {
+          config.color
+        }
+        .stderr();
 
-      eprintln!("[{}] {}", color.paint(&timestamp), self.name);
+        eprintln!("[{}] {}", color.paint(&timestamp), self.name);
+      }
     }
 
     let mut evaluated_lines = Vec::new();
@@ -402,7 +405,7 @@ impl<'src, D> Recipe<'src, D> {
       evaluated_lines.push(evaluator.evaluate_line(line, false)?);
     }
 
-    if config.verbosity.loud() && (config.dry_run || self.quiet) {
+    if !config.tap && config.verbosity.loud() && (config.dry_run || self.quiet) {
       for line in &evaluated_lines {
         eprintln!(
           "{}",

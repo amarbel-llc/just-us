@@ -129,6 +129,7 @@ mod slash_operator;
 mod string;
 mod subsequents;
 mod summary;
+mod tap;
 mod tempdir;
 mod timestamps;
 mod undefined_variables;
