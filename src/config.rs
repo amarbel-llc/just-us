@@ -12,6 +12,7 @@ use {
 
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Config {
+  pub(crate) agents_only: bool,
   pub(crate) alias_style: AliasStyle,
   pub(crate) allow_missing: bool,
   pub(crate) ceiling: Option<PathBuf>,
@@ -92,6 +93,7 @@ mod cmd {
 }
 
 mod arg {
+  pub(crate) const AGENTS_ONLY: &str = "AGENTS-ONLY";
   pub(crate) const ALIAS_STYLE: &str = "ALIAS_STYLE";
   pub(crate) const ALLOW_MISSING: &str = "ALLOW-MISSING";
   pub(crate) const ARGUMENTS: &str = "ARGUMENTS";
@@ -154,6 +156,14 @@ impl Config {
           .placeholder(AnsiColor::Cyan.on_default())
           .usage(AnsiColor::Yellow.on_default() | Effects::BOLD)
           .valid(AnsiColor::Green.on_default()),
+      )
+      .arg(
+        Arg::new(arg::AGENTS_ONLY)
+          .long("agents-only")
+          .env("JUST_AGENTS_ONLY")
+          .action(ArgAction::SetTrue)
+          .hide(true)
+          .help("Only allow running recipes marked [agents('always-allowed')]"),
       )
       .arg(
         Arg::new(arg::ALIAS_STYLE)
@@ -802,6 +812,7 @@ impl Config {
     let explain = matches.get_flag(arg::EXPLAIN);
 
     Ok(Self {
+      agents_only: matches.get_flag(arg::AGENTS_ONLY),
       alias_style: matches
         .get_one::<AliasStyle>(arg::ALIAS_STYLE)
         .unwrap()

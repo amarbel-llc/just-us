@@ -583,3 +583,89 @@ fn agents_attribute_invalid_on_alias() {
     )
     .failure();
 }
+
+#[test]
+fn agents_only_allows_always_allowed() {
+  Test::new()
+    .justfile(
+      "
+        [agents('always-allowed')]
+        foo:
+          echo bar
+      ",
+    )
+    .arg("--agents-only")
+    .stdout("bar\n")
+    .stderr("echo bar\n")
+    .success();
+}
+
+#[test]
+fn agents_only_rejects_never_allowed() {
+  Test::new()
+    .justfile(
+      "
+        [agents('never-allowed')]
+        foo:
+          echo bar
+      ",
+    )
+    .arg("--agents-only")
+    .stderr(
+      "error: Recipe `foo` cannot be run because it is not marked `[agents('always-allowed')]`\n",
+    )
+    .failure();
+}
+
+#[test]
+fn agents_only_rejects_per_request() {
+  Test::new()
+    .justfile(
+      "
+        [agents('per-request')]
+        foo:
+          echo bar
+      ",
+    )
+    .arg("--agents-only")
+    .stderr(
+      "error: Recipe `foo` cannot be run because it is not marked `[agents('always-allowed')]`\n",
+    )
+    .failure();
+}
+
+#[test]
+fn agents_only_rejects_unmarked_recipe() {
+  Test::new()
+    .justfile(
+      "
+        foo:
+          echo bar
+      ",
+    )
+    .arg("--agents-only")
+    .stderr(
+      "error: Recipe `foo` cannot be run because it is not marked `[agents('always-allowed')]`\n",
+    )
+    .failure();
+}
+
+#[test]
+fn agents_only_rejects_dependency_not_allowed() {
+  Test::new()
+    .justfile(
+      "
+        [agents('always-allowed')]
+        foo: bar
+          echo foo
+
+        bar:
+          echo bar
+      ",
+    )
+    .arg("--agents-only")
+    .stderr(
+      "error: Recipe `bar` cannot be run because it is not marked `[agents('always-allowed')]`\n",
+    )
+    .failure();
+}

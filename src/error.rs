@@ -2,6 +2,9 @@ use super::*;
 
 #[derive(Debug)]
 pub(crate) enum Error<'src> {
+  AgentsNotAllowed {
+    recipe: &'src str,
+  },
   AmbiguousModuleFile {
     module: Name<'src>,
     found: Vec<PathBuf>,
@@ -350,6 +353,10 @@ impl ColorDisplay for Error<'_> {
     write!(f, "{error}: {message}")?;
 
     match self {
+      AgentsNotAllowed { recipe } => write!(
+        f,
+        "Recipe `{recipe}` cannot be run because it is not marked `[agents('always-allowed')]`",
+      )?,
       Const { const_error } => write!(
         f,
         "{const_error}",

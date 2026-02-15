@@ -286,6 +286,19 @@ impl<'src> Justfile<'src> {
       });
     }
 
+    if config.agents_only {
+      let allowed = recipe
+        .attributes
+        .get(AttributeDiscriminant::Agents)
+        .is_some_and(|attr| matches!(attr, Attribute::Agents(lit) if lit.cooked == "always-allowed"));
+
+      if !allowed {
+        return Err(Error::AgentsNotAllowed {
+          recipe: recipe.name(),
+        });
+      }
+    }
+
     let (module, scope) = scopes
       .get(recipe.module_path())
       .expect("failed to retrieve scope for module");

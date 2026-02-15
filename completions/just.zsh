@@ -45,6 +45,7 @@ _just() {
 '-s+[Show recipe at <PATH>]: :(_just_commands)' \
 '--show=[Show recipe at <PATH>]: :(_just_commands)' \
 '()--usage=[Print recipe usage information]:PATH:_default' \
+'--agents-only[Only allow running recipes marked \[agents('\''always-allowed'\'')\]]' \
 '--check[Run \`--fmt\` in '\''check'\'' mode. Exits with 0 if justfile is formatted correctly. Exits with 1 and prints a diff if formatting is required.]' \
 '--clear-shell-args[Clear shell arguments]' \
 '(-q --quiet)-n[Print what just would do without doing it]' \

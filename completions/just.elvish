@@ -47,6 +47,7 @@ set edit:completion:arg-completer[just] = {|@words|
             cand -s 'Show recipe at <PATH>'
             cand --show 'Show recipe at <PATH>'
             cand --usage 'Print recipe usage information'
+            cand --agents-only 'Only allow running recipes marked [agents(''always-allowed'')]'
             cand --check 'Run `--fmt` in ''check'' mode. Exits with 0 if justfile is formatted correctly. Exits with 1 and prints a diff if formatting is required.'
             cand --clear-shell-args 'Clear shell arguments'
             cand -n 'Print what just would do without doing it'
