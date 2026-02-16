@@ -224,6 +224,7 @@ impl<'src> Justfile<'src> {
         invocation.recipe,
         &scopes,
         search,
+        None,
       )?;
     }
 
@@ -239,16 +240,14 @@ impl<'src> Justfile<'src> {
     invocations: Vec<Invocation<'src, '_>>,
   ) -> RunResult<'src> {
     let mut stdout = io::stdout().lock();
-    let count = invocations.len();
 
     tap_output::write_version(&mut stdout).map_err(|io_error| Error::StdoutIo { io_error })?;
-    tap_output::write_plan(&mut stdout, count).map_err(|io_error| Error::StdoutIo { io_error })?;
 
-    let mut failures = 0;
+    let tap_writer = Mutex::new(TapWriter::new());
+    let ran = Ran::default();
 
-    for (i, invocation) in invocations.iter().enumerate() {
-      let ran = Ran::default();
-      let result = Self::run_recipe(
+    for invocation in &invocations {
+      let _ = Self::run_recipe(
         &invocation.arguments,
         config,
         dotenv,
@@ -257,34 +256,20 @@ impl<'src> Justfile<'src> {
         invocation.recipe,
         scopes,
         search,
+        Some(&tap_writer),
       );
-
-      let test_result = match result {
-        Ok(()) => TapTestResult {
-          number: i + 1,
-          name: invocation.recipe.name().into(),
-          ok: true,
-          error_message: None,
-          exit_code: None,
-        },
-        Err(ref error) => {
-          failures += 1;
-          TapTestResult {
-            number: i + 1,
-            name: invocation.recipe.name().into(),
-            ok: false,
-            error_message: Some(format!("{}", error.color_display(Color::never()))),
-            exit_code: error.code(),
-          }
-        }
-      };
-
-      tap_output::write_test_point(&mut stdout, &test_result)
-        .map_err(|io_error| Error::StdoutIo { io_error })?;
     }
 
-    if failures > 0 {
-      Err(Error::TapFailure { count, failures })
+    let tap = tap_writer.into_inner().unwrap();
+
+    tap_output::write_plan(&mut stdout, tap.counter)
+      .map_err(|io_error| Error::StdoutIo { io_error })?;
+
+    if tap.failures > 0 {
+      Err(Error::TapFailure {
+        count: tap.counter,
+        failures: tap.failures,
+      })
     } else {
       Ok(())
     }
@@ -331,6 +316,7 @@ impl<'src> Justfile<'src> {
     recipe: &Recipe<'src>,
     scopes: &BTreeMap<String, (&Self, &Scope<'src, '_>)>,
     search: &Search,
+    tap: Option<&Mutex<TapWriter>>,
   ) -> RunResult<'src> {
     {
       let mutex = ran.mutex(recipe, arguments);
@@ -397,9 +383,59 @@ impl<'src> Justfile<'src> {
       recipe,
       scopes,
       search,
+      tap,
     )?;
 
-    recipe.run(&context, &scope, &positional, is_dependency)?;
+    let tap_output_buf = tap.as_ref().map(|_| Mutex::new(Vec::<u8>::new()));
+
+    let run_result =
+      recipe.run(&context, &scope, &positional, is_dependency, tap_output_buf.as_ref());
+
+    if let Some(tap) = tap {
+      let mut tap = tap.lock().unwrap();
+      tap.counter += 1;
+      let number = tap.counter;
+
+      let captured_output = tap_output_buf.map(|buf| {
+        let buf = buf.into_inner().unwrap();
+        String::from_utf8_lossy(&buf).into_owned()
+      });
+
+      let output = captured_output.filter(|s| !s.is_empty());
+
+      let mut stdout = io::stdout().lock();
+
+      let test_result = match run_result {
+        Ok(()) => TapTestResult {
+          number,
+          name: recipe.name().into(),
+          ok: true,
+          error_message: None,
+          exit_code: None,
+          output,
+        },
+        Err(ref error) => {
+          tap.failures += 1;
+          TapTestResult {
+            number,
+            name: recipe.name().into(),
+            ok: false,
+            error_message: Some(format!("{}", error.color_display(Color::never()))),
+            exit_code: error.code(),
+            output,
+          }
+        }
+      };
+
+      tap_output::write_test_point(&mut stdout, &test_result)
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
+
+      if let Err(error) = run_result {
+        return Err(error);
+      }
+    } else {
+      run_result?;
+    }
 
     Self::run_dependencies(
       config,
@@ -411,6 +447,7 @@ impl<'src> Justfile<'src> {
       recipe,
       scopes,
       search,
+      tap,
     )?;
 
     Ok(())
@@ -426,6 +463,7 @@ impl<'src> Justfile<'src> {
     recipe: &Recipe<'src>,
     scopes: &BTreeMap<String, (&Self, &Scope<'src, 'run>)>,
     search: &Search,
+    tap: Option<&Mutex<TapWriter>>,
   ) -> RunResult<'src> {
     if context.config.no_dependencies {
       return Ok(());
@@ -450,7 +488,7 @@ impl<'src> Justfile<'src> {
         for (recipe, arguments) in evaluated {
           handles.push(thread_scope.spawn(move || {
             Self::run_recipe(
-              &arguments, config, dotenv, true, ran, recipe, scopes, search,
+              &arguments, config, dotenv, true, ran, recipe, scopes, search, tap,
             )
           }));
         }
@@ -464,7 +502,7 @@ impl<'src> Justfile<'src> {
     } else {
       for (recipe, arguments) in evaluated {
         Self::run_recipe(
-          &arguments, config, dotenv, true, ran, recipe, scopes, search,
+          &arguments, config, dotenv, true, ran, recipe, scopes, search, tap,
         )?;
       }
     }

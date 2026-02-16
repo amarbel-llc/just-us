@@ -93,7 +93,7 @@ pub(crate) use {
     suggestion::Suggestion,
     switch::Switch,
     table::Table,
-    tap_output::TapTestResult,
+    tap_output::{TapTestResult, TapWriter},
     thunk::Thunk,
     token::Token,
     token_kind::TokenKind,
