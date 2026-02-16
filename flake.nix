@@ -53,7 +53,6 @@
         # Tests that require /usr/bin/env (shebangs), USER env var,
         # or other host facilities unavailable inside the Nix sandbox.
         skippedTests = [
-          "completions::bash" # needs git repo + cargo build
           # shebang tests — all use #!/usr/bin/env
           "shebang::run_shebang"
           "script::multiline_shebang_line_numbers"
@@ -67,13 +66,9 @@
           "tempdir::argument_overrides_setting"
           "tempdir::setting"
           # editor/chooser tests — scripts use shebangs
-          "edit::editor_precedence"
           "edit::editor_working_directory"
           "edit::status_error"
-          "choose::default"
           "choose::status_error"
-          # global justfile test — XDG_CONFIG_HOME in nix sandbox leaks into test
-          "global::unix"
           "quiet::choose_status"
           # working_directory tests — use #!/usr/bin/env sh
           "working_directory::change_working_directory_to_search_justfile_parent"
@@ -102,7 +97,7 @@
             inherit cargoArtifacts;
 
             nativeCheckInputs = with pkgs; [
-              bash
+              bashInteractive
               coreutils
             ];
 

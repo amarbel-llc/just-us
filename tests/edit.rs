@@ -117,14 +117,20 @@ fn editor_precedence() {
 
   assert_stdout(&output, JUSTFILE);
 
-  let cat = which("cat").unwrap();
   let vim = tmp.path().join(format!("vim{EXE_SUFFIX}"));
 
   #[cfg(unix)]
-  std::os::unix::fs::symlink(cat, vim).unwrap();
+  {
+    fs::write(&vim, "#!/bin/sh\ncat \"$@\"\n").unwrap();
+    let permissions = std::os::unix::fs::PermissionsExt::from_mode(0o755);
+    fs::set_permissions(&vim, permissions).unwrap();
+  }
 
   #[cfg(windows)]
-  std::os::windows::fs::symlink_file(cat, vim).unwrap();
+  {
+    let cat = which("cat").unwrap();
+    std::os::windows::fs::symlink_file(cat, vim).unwrap();
+  }
 
   let path = env::join_paths(
     iter::once(tmp.path().to_owned()).chain(env::split_paths(&env::var_os("PATH").unwrap())),

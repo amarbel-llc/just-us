@@ -25,8 +25,10 @@ use {
   },
   tempfile::TempDir,
   temptree::{temptree, tree, Tree},
-  which::which,
 };
+
+#[cfg(windows)]
+use which::which;
 
 const JUST: &str = env!("CARGO_BIN_EXE_just");
 

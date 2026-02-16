@@ -20,8 +20,10 @@ fn bash() {
 
   fs::write(&path, script).unwrap();
 
-  let status = Command::new("./tests/completions/just.bash")
+  let status = Command::new("bash")
+    .arg("./tests/completions/just.bash")
     .arg(path)
+    .arg(JUST)
     .status()
     .unwrap();
 

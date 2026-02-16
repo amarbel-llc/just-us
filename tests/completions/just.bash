@@ -20,8 +20,14 @@ reply_equals() {
 # --- Initial Setup ---
 source "$1"
 cd tests/completions
-cargo build
-PATH="$(git rev-parse --show-toplevel)/target/debug:$PATH"
+
+if [ -n "${2:-}" ]; then
+  PATH="$(dirname "$2"):$PATH"
+else
+  cargo build
+  PATH="$(git rev-parse --show-toplevel)/target/debug:$PATH"
+fi
+
 exit_code=0
 
 # --- Tests ---
