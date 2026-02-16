@@ -1335,6 +1335,7 @@ impl<'run, 'src> Parser<'run, 'src> {
     let set_value = match keyword {
       Keyword::DotenvFilename => Some(Setting::DotenvFilename(self.parse_expression()?)),
       Keyword::DotenvPath => Some(Setting::DotenvPath(self.parse_expression()?)),
+      Keyword::OutputFormat => Some(Setting::OutputFormat(self.parse_expression()?)),
       Keyword::ScriptInterpreter => Some(Setting::ScriptInterpreter(self.parse_interpreter()?)),
       Keyword::Shell => Some(Setting::Shell(self.parse_interpreter()?)),
       Keyword::Tempdir => Some(Setting::Tempdir(self.parse_expression()?)),

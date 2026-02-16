@@ -18,6 +18,7 @@ pub(crate) struct Settings {
   pub(crate) fallback: bool,
   pub(crate) ignore_comments: bool,
   pub(crate) no_exit_message: bool,
+  pub(crate) output_format: Option<crate::output_format::OutputFormat>,
   pub(crate) positional_arguments: bool,
   pub(crate) quiet: bool,
   #[serde(skip)]

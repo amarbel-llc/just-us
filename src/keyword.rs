@@ -22,6 +22,7 @@ pub(crate) enum Keyword {
   Import,
   Mod,
   NoExitMessage,
+  OutputFormat,
   PositionalArguments,
   Quiet,
   ScriptInterpreter,

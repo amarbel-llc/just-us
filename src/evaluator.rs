@@ -109,6 +109,17 @@ impl<'src, 'run> Evaluator<'src, 'run> {
         Setting::NoExitMessage(value) => {
           settings.no_exit_message = value;
         }
+        Setting::OutputFormat(value) => {
+          let value = self.evaluate_expression(&value)?;
+          settings.output_format = Some(
+            value
+              .parse::<crate::output_format::OutputFormat>()
+              .map_err(|_| Error::FormatUnknown {
+                format: value.clone(),
+                setting: "output-format".into(),
+              })?,
+          );
+        }
         Setting::PositionalArguments(value) => {
           settings.positional_arguments = value;
         }

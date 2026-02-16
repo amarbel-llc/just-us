@@ -220,6 +220,10 @@ pub(crate) enum Error<'src> {
   StdoutIo {
     io_error: io::Error,
   },
+  FormatUnknown {
+    format: String,
+    setting: String,
+  },
   TapFailure {
     count: usize,
     failures: usize,
@@ -750,6 +754,9 @@ impl ColorDisplay for Error<'_> {
       }
       StdoutIo { io_error } => {
         write!(f, "I/O error writing to stdout: {io_error}")?;
+      }
+      FormatUnknown { format, setting } => {
+        write!(f, "Unknown {setting} value: \"{format}\"")?;
       }
       TapFailure { count, failures } => {
         write!(f, "{failures} of {count} TAP test(s) failed")?;

@@ -13,6 +13,7 @@ pub(crate) enum Setting<'src> {
   Fallback(bool),
   IgnoreComments(bool),
   NoExitMessage(bool),
+  OutputFormat(Expression<'src>),
   PositionalArguments(bool),
   Quiet(bool),
   ScriptInterpreter(Interpreter<Expression<'src>>),
@@ -29,6 +30,7 @@ impl<'src> Setting<'src> {
     let first = match self {
       Self::DotenvFilename(value)
       | Self::DotenvPath(value)
+      | Self::OutputFormat(value)
       | Self::Tempdir(value)
       | Self::WorkingDirectory(value) => Some(value),
       Self::ScriptInterpreter(value) | Self::Shell(value) | Self::WindowsShell(value) => {
@@ -66,6 +68,7 @@ impl Display for Setting<'_> {
       | Self::WindowsPowerShell(value) => write!(f, "{value}"),
       Self::DotenvFilename(value)
       | Self::DotenvPath(value)
+      | Self::OutputFormat(value)
       | Self::Tempdir(value)
       | Self::WorkingDirectory(value) => {
         write!(f, "{value}")
