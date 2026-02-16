@@ -64,7 +64,7 @@ _just() {
 '(-n --dry-run)--quiet[Suppress all output]' \
 '--allow-missing[Ignore missing recipe and module errors]' \
 '--shell-command[Invoke <COMMAND> with the shell used to run recipe lines and backticks]' \
-'--tap[Format recipe execution results as TAP version 14 output]' \
+'--output-format[Set output format (default, tap)]' \
 '--timestamp[Print recipe command timestamps]' \
 '-u[Return list and summary entries in source order]' \
 '--unsorted[Return list and summary entries in source order]' \

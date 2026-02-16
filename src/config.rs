@@ -40,7 +40,7 @@ pub(crate) struct Config {
   pub(crate) shell_args: Option<Vec<String>>,
   pub(crate) shell_command: bool,
   pub(crate) subcommand: Subcommand,
-  pub(crate) tap: bool,
+  pub(crate) output_format: Option<OutputFormat>,
   pub(crate) tempdir: Option<PathBuf>,
   pub(crate) timestamp: bool,
   pub(crate) timestamp_format: String,
@@ -126,7 +126,7 @@ mod arg {
   pub(crate) const SHELL: &str = "SHELL";
   pub(crate) const SHELL_ARG: &str = "SHELL-ARG";
   pub(crate) const SHELL_COMMAND: &str = "SHELL-COMMAND";
-  pub(crate) const TAP: &str = "TAP";
+  pub(crate) const OUTPUT_FORMAT: &str = "OUTPUT-FORMAT";
   pub(crate) const TEMPDIR: &str = "TEMPDIR";
   pub(crate) const TIMESTAMP: &str = "TIMESTAMP";
   pub(crate) const TIMESTAMP_FORMAT: &str = "TIMESTAMP-FORMAT";
@@ -411,11 +411,13 @@ impl Config {
           .help("Invoke <COMMAND> with the shell used to run recipe lines and backticks"),
       )
       .arg(
-        Arg::new(arg::TAP)
-          .long("tap")
-          .env("JUST_TAP")
-          .action(ArgAction::SetTrue)
-          .help("Format recipe execution results as TAP version 14 output"),
+        Arg::new(arg::OUTPUT_FORMAT)
+          .long("output-format")
+          .env("JUST_OUTPUT_FORMAT")
+          .action(ArgAction::Set)
+          .value_parser(clap::value_parser!(OutputFormat))
+          .value_name("FORMAT")
+          .help("Set output format (default, tap)"),
       )
       .arg(
         Arg::new(arg::TEMPDIR)
@@ -866,7 +868,7 @@ impl Config {
       },
       shell_command: matches.get_flag(arg::SHELL_COMMAND),
       subcommand,
-      tap: matches.get_flag(arg::TAP),
+      output_format: matches.get_one::<OutputFormat>(arg::OUTPUT_FORMAT).copied(),
       tempdir: matches.get_one::<PathBuf>(arg::TEMPDIR).map(Into::into),
       timestamp: matches.get_flag(arg::TIMESTAMP),
       timestamp_format: matches

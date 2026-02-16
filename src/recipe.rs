@@ -213,11 +213,13 @@ impl<'src, D> Recipe<'src, D> {
     let prefix = color.prefix();
     let suffix = color.suffix();
 
-    if context.config.verbosity.loquacious() && !context.config.tap {
+    if context.config.verbosity.loquacious()
+      && context.config.output_format != Some(OutputFormat::Tap)
+    {
       eprintln!("{prefix}===> Running recipe `{}`...{suffix}", self.name);
     }
 
-    if context.config.explain && !context.config.tap {
+    if context.config.explain && context.config.output_format != Some(OutputFormat::Tap) {
       if let Some(doc) = self.doc() {
         eprintln!("{prefix}#### {doc}{suffix}");
       }
@@ -287,7 +289,7 @@ impl<'src, D> Recipe<'src, D> {
         continue;
       }
 
-      if !config.tap
+      if config.output_format != Some(OutputFormat::Tap)
         && (config.dry_run
           || config.verbosity.loquacious()
           || !((quiet_line ^ self.quiet)
@@ -328,7 +330,7 @@ impl<'src, D> Recipe<'src, D> {
       if tap_output.is_some() {
         cmd.stderr(Stdio::piped());
         cmd.stdout(Stdio::piped());
-      } else if config.verbosity.quiet() || config.tap {
+      } else if config.verbosity.quiet() || config.output_format == Some(OutputFormat::Tap) {
         cmd.stderr(Stdio::null());
         cmd.stdout(Stdio::null());
       }
@@ -436,7 +438,7 @@ impl<'src, D> Recipe<'src, D> {
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
-    if !config.tap {
+    if config.output_format != Some(OutputFormat::Tap) {
       if let Some(timestamp) = config.timestamp() {
         let color = if config.highlight {
           config.color.command(config.command_color)
@@ -454,7 +456,10 @@ impl<'src, D> Recipe<'src, D> {
       evaluated_lines.push(evaluator.evaluate_line(line, false)?);
     }
 
-    if !config.tap && config.verbosity.loud() && (config.dry_run || self.quiet) {
+    if config.output_format != Some(OutputFormat::Tap)
+      && config.verbosity.loud()
+      && (config.dry_run || self.quiet)
+    {
       for line in &evaluated_lines {
         eprintln!(
           "{}",

@@ -69,7 +69,7 @@ Register-ArgumentCompleter -Native -CommandName 'just' -ScriptBlock {
             [CompletionResult]::new('--quiet', '--quiet', [CompletionResultType]::ParameterName, 'Suppress all output')
             [CompletionResult]::new('--allow-missing', '--allow-missing', [CompletionResultType]::ParameterName, 'Ignore missing recipe and module errors')
             [CompletionResult]::new('--shell-command', '--shell-command', [CompletionResultType]::ParameterName, 'Invoke <COMMAND> with the shell used to run recipe lines and backticks')
-            [CompletionResult]::new('--tap', '--tap', [CompletionResultType]::ParameterName, 'Format recipe execution results as TAP version 14 output')
+            [CompletionResult]::new('--output-format', '--output-format', [CompletionResultType]::ParameterName, 'Set output format (default, tap)')
             [CompletionResult]::new('--timestamp', '--timestamp', [CompletionResultType]::ParameterName, 'Print recipe command timestamps')
             [CompletionResult]::new('-u', '-u', [CompletionResultType]::ParameterName, 'Return list and summary entries in source order')
             [CompletionResult]::new('--unsorted', '--unsorted', [CompletionResultType]::ParameterName, 'Return list and summary entries in source order')
