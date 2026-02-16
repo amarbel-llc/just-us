@@ -40,6 +40,9 @@ complete -c just -l shell -d 'Invoke <SHELL> to run recipes' -r
 complete -c just -l shell-arg -d 'Invoke shell with <SHELL-ARG> as an argument' -r
 complete -c just -l output-format -d 'Set output format (default, tap)' -r -f -a "default\t''
 tap\t''"
+complete -c just -l tap-stream -d 'Set TAP output streaming mode (buffered, comments, stderr)' -r -f -a "buffered\t''
+comments\t''
+stderr\t''"
 complete -c just -l tempdir -d 'Save temporary files to <TEMPDIR>.' -r -F
 complete -c just -l timestamp-format -d 'Timestamp format string' -r
 complete -c just -s d -l working-directory -d 'Use <WORKING-DIRECTORY> as working directory. --justfile must also be set' -r -F

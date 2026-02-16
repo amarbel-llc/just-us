@@ -132,6 +132,17 @@ impl<'src, 'run> Evaluator<'src, 'run> {
         Setting::Shell(value) => {
           settings.shell = Some(self.evaluate_interpreter(&value)?);
         }
+        Setting::TapStream(value) => {
+          let value = self.evaluate_expression(&value)?;
+          settings.tap_stream = Some(
+            value
+              .parse::<crate::tap_stream::TapStream>()
+              .map_err(|_| Error::FormatUnknown {
+                format: value.clone(),
+                setting: "tap-stream".into(),
+              })?,
+          );
+        }
         Setting::Unstable(value) => {
           settings.unstable = value;
         }

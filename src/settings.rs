@@ -24,6 +24,7 @@ pub(crate) struct Settings {
   #[serde(skip)]
   pub(crate) script_interpreter: Option<Interpreter<String>>,
   pub(crate) shell: Option<Interpreter<String>>,
+  pub(crate) tap_stream: Option<crate::tap_stream::TapStream>,
   pub(crate) tempdir: Option<String>,
   pub(crate) unstable: bool,
   pub(crate) windows_powershell: bool,

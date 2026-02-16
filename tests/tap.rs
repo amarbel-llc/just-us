@@ -352,3 +352,169 @@ fn tap_no_quiet_overrides_set_quiet() {
     .stderr("")
     .success();
 }
+
+#[test]
+fn tap_stream_comments_single_recipe() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "comments"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_stream_comments_failing() {
+  Test::new()
+    .justfile(
+      "
+      test:
+        @exit 1
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "comments"])
+    .arg("test")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .stderr("")
+    .failure();
+}
+
+#[test]
+fn tap_stream_comments_no_output_field() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "comments"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n$")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_stream_stderr_single_recipe() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "stderr"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
+    .stderr_regex("hello\n")
+    .success();
+}
+
+#[test]
+fn tap_stream_stderr_failing() {
+  Test::new()
+    .justfile(
+      "
+      test:
+        @exit 1
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "stderr"])
+    .arg("test")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .failure();
+}
+
+#[test]
+fn tap_stream_buffered_explicit() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "buffered"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_stream_justfile_setting() {
+  Test::new()
+    .justfile(
+      r#"
+      set output-format := "tap"
+      set tap-stream := "comments"
+
+      build:
+        echo hello
+      "#,
+    )
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_stream_cli_overrides_setting() {
+  Test::new()
+    .justfile(
+      r#"
+      set output-format := "tap"
+      set tap-stream := "comments"
+
+      build:
+        echo hello
+      "#,
+    )
+    .args(["--tap-stream", "buffered"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_stream_env_var() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .args(["--output-format", "tap"])
+    .env("JUST_TAP_STREAM", "comments")
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_stream_comments_multiline() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo line1
+        echo line2
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "comments"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# line1\n# line2\nok 1 - build\n")
+    .stderr("")
+    .success();
+}

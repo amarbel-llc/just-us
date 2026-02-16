@@ -35,6 +35,7 @@ set edit:completion:arg-completer[just] = {|@words|
             cand --shell 'Invoke <SHELL> to run recipes'
             cand --shell-arg 'Invoke shell with <SHELL-ARG> as an argument'
             cand --output-format 'Set output format (default, tap)'
+            cand --tap-stream 'Set TAP output streaming mode (buffered, comments, stderr)'
             cand --tempdir 'Save temporary files to <TEMPDIR>.'
             cand --timestamp-format 'Timestamp format string'
             cand -d 'Use <WORKING-DIRECTORY> as working directory. --justfile must also be set'

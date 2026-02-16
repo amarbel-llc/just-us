@@ -230,6 +230,7 @@ impl<'src> Justfile<'src> {
         &scopes,
         search,
         None,
+        TapStream::default(),
       )?;
     }
 
@@ -276,6 +277,11 @@ impl<'src> Justfile<'src> {
     tap_output::write_plan(&mut stdout, plan_count)
       .map_err(|io_error| Error::StdoutIo { io_error })?;
 
+    let tap_stream = config
+      .tap_stream
+      .or(self.settings.tap_stream)
+      .unwrap_or_default();
+
     let tap_writer = Mutex::new(TapWriter::new());
     let ran = Ran::default();
 
@@ -290,6 +296,7 @@ impl<'src> Justfile<'src> {
         scopes,
         search,
         Some(&tap_writer),
+        tap_stream,
       );
     }
 
@@ -347,6 +354,7 @@ impl<'src> Justfile<'src> {
     scopes: &BTreeMap<String, (&Self, &Scope<'src, '_>)>,
     search: &Search,
     tap: Option<&Mutex<TapWriter>>,
+    tap_stream: TapStream,
   ) -> RunResult<'src> {
     {
       let mutex = ran.mutex(recipe, arguments);
@@ -414,24 +422,29 @@ impl<'src> Justfile<'src> {
       scopes,
       search,
       tap,
+      tap_stream,
     )?;
 
     let tap_output_buf = tap.as_ref().map(|_| Mutex::new(Vec::<u8>::new()));
 
     let run_result =
-      recipe.run(&context, &scope, &positional, is_dependency, tap_output_buf.as_ref());
+      recipe.run(&context, &scope, &positional, is_dependency, tap_output_buf.as_ref(), tap_stream);
 
     if let Some(tap) = tap {
       let mut tap = tap.lock().unwrap();
       tap.counter += 1;
       let number = tap.counter;
 
-      let captured_output = tap_output_buf.map(|buf| {
-        let buf = buf.into_inner().unwrap();
-        String::from_utf8_lossy(&buf).into_owned()
-      });
-
-      let output = captured_output.filter(|s| !s.is_empty());
+      let output = if tap_stream == TapStream::Comments {
+        None
+      } else {
+        tap_output_buf
+          .map(|buf| {
+            let buf = buf.into_inner().unwrap();
+            String::from_utf8_lossy(&buf).into_owned()
+          })
+          .filter(|s| !s.is_empty())
+      };
 
       let quiet = recipe.quiet
         || (module.settings.quiet && !recipe.no_quiet())
@@ -484,6 +497,7 @@ impl<'src> Justfile<'src> {
       scopes,
       search,
       tap,
+      tap_stream,
     )?;
 
     Ok(())
@@ -500,6 +514,7 @@ impl<'src> Justfile<'src> {
     scopes: &BTreeMap<String, (&Self, &Scope<'src, 'run>)>,
     search: &Search,
     tap: Option<&Mutex<TapWriter>>,
+    tap_stream: TapStream,
   ) -> RunResult<'src> {
     if context.config.no_dependencies {
       return Ok(());
@@ -524,7 +539,7 @@ impl<'src> Justfile<'src> {
         for (recipe, arguments) in evaluated {
           handles.push(thread_scope.spawn(move || {
             Self::run_recipe(
-              &arguments, config, dotenv, true, ran, recipe, scopes, search, tap,
+              &arguments, config, dotenv, true, ran, recipe, scopes, search, tap, tap_stream,
             )
           }));
         }
@@ -538,7 +553,7 @@ impl<'src> Justfile<'src> {
     } else {
       for (recipe, arguments) in evaluated {
         Self::run_recipe(
-          &arguments, config, dotenv, true, ran, recipe, scopes, search, tap,
+          &arguments, config, dotenv, true, ran, recipe, scopes, search, tap, tap_stream,
         )?;
       }
     }

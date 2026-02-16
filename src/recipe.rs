@@ -53,6 +53,100 @@ fn capture_command_output(mut cmd: Command) -> (io::Result<process::Output>, Opt
   cmd.output_guard()
 }
 
+/// Capture command output while streaming each chunk to a callback in real-time.
+/// Uses a PTY on Unix when stdout is a terminal, similar to `capture_command_output`.
+#[cfg(unix)]
+fn stream_command_output(
+  mut cmd: Command,
+  stream_sink: &dyn Fn(&[u8]) -> io::Result<()>,
+) -> (io::Result<process::Output>, Option<Signal>) {
+  use std::io::{IsTerminal, Read};
+
+  if io::stdout().is_terminal() {
+    match nix::pty::openpty(None, None) {
+      Ok(pty) => {
+        let slave_clone = match pty.slave.try_clone() {
+          Ok(fd) => fd,
+          Err(e) => return (Err(e), None),
+        };
+        cmd.stdout(Stdio::from(slave_clone));
+        cmd.stderr(Stdio::from(pty.slave));
+
+        let master = pty.master;
+        let mut master_file = fs::File::from(master);
+
+        SignalHandler::spawn(cmd, move |mut child| {
+          let mut output = Vec::new();
+          loop {
+            let mut buf = [0u8; 4096];
+            match master_file.read(&mut buf) {
+              Ok(0) => break,
+              Ok(n) => {
+                let chunk = &buf[..n];
+                output.extend_from_slice(chunk);
+                let _ = stream_sink(chunk);
+              }
+              Err(e) if e.raw_os_error() == Some(libc::EIO) => break,
+              Err(e) => return Err(e),
+            }
+          }
+          let status = child.wait()?;
+          Ok(process::Output {
+            status,
+            stdout: output,
+            stderr: Vec::new(),
+          })
+        })
+      }
+      Err(e) => (Err(io::Error::from(e)), None),
+    }
+  } else {
+    stream_command_output_piped(cmd, stream_sink)
+  }
+}
+
+#[cfg(not(unix))]
+fn stream_command_output(
+  cmd: Command,
+  stream_sink: &dyn Fn(&[u8]) -> io::Result<()>,
+) -> (io::Result<process::Output>, Option<Signal>) {
+  stream_command_output_piped(cmd, stream_sink)
+}
+
+fn stream_command_output_piped(
+  mut cmd: Command,
+  stream_sink: &dyn Fn(&[u8]) -> io::Result<()>,
+) -> (io::Result<process::Output>, Option<Signal>) {
+  use std::io::Read;
+
+  cmd.stdout(Stdio::piped());
+  cmd.stderr(Stdio::piped());
+
+  SignalHandler::spawn(cmd, |mut child| {
+    let mut output = Vec::new();
+    if let Some(mut stdout) = child.stdout.take() {
+      let mut buf = [0u8; 4096];
+      loop {
+        match stdout.read(&mut buf) {
+          Ok(0) => break,
+          Ok(n) => {
+            let chunk = &buf[..n];
+            output.extend_from_slice(chunk);
+            let _ = stream_sink(chunk);
+          }
+          Err(e) => return Err(e),
+        }
+      }
+    }
+    let status = child.wait()?;
+    Ok(process::Output {
+      status,
+      stdout: output,
+      stderr: Vec::new(),
+    })
+  })
+}
+
 /// Return a `Error::Signal` if the process was terminated by a signal,
 /// otherwise return an `Error::UnknownFailure`
 fn error_from_signal(recipe: &str, line_number: Option<usize>, exit_status: ExitStatus) -> Error {
@@ -261,6 +355,7 @@ impl<'src, D> Recipe<'src, D> {
     positional: &[String],
     is_dependency: bool,
     tap_output: Option<&Mutex<Vec<u8>>>,
+    tap_stream: TapStream,
   ) -> RunResult<'src, ()> {
     let color = context.config.color.stderr().banner();
     let prefix = color.prefix();
@@ -281,9 +376,9 @@ impl<'src, D> Recipe<'src, D> {
     let evaluator = Evaluator::new(context, BTreeMap::new(), is_dependency, scope);
 
     if self.is_script() {
-      self.run_script(context, scope, positional, evaluator, tap_output)
+      self.run_script(context, scope, positional, evaluator, tap_output, tap_stream)
     } else {
-      self.run_linewise(context, scope, positional, evaluator, tap_output)
+      self.run_linewise(context, scope, positional, evaluator, tap_output, tap_stream)
     }
   }
 
@@ -294,6 +389,7 @@ impl<'src, D> Recipe<'src, D> {
     positional: &[String],
     mut evaluator: Evaluator<'src, 'run>,
     tap_output: Option<&Mutex<Vec<u8>>>,
+    tap_stream: TapStream,
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
@@ -399,7 +495,32 @@ impl<'src, D> Recipe<'src, D> {
       );
 
       if tap_output.is_some() {
-        let (result, caught) = capture_command_output(cmd);
+        let (result, caught) = match tap_stream {
+          TapStream::Buffered => capture_command_output(cmd),
+          TapStream::Comments => {
+            let stdout_lock = io::stdout();
+            let line_buf = Mutex::new(Vec::<u8>::new());
+            stream_command_output(cmd, &|chunk| {
+              let mut buf = line_buf.lock().unwrap();
+              buf.extend_from_slice(chunk);
+              let mut stdout = stdout_lock.lock();
+              while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                let line = String::from_utf8_lossy(&buf[..pos]);
+                let line = line.rsplit('\r').next().unwrap_or(&line);
+                writeln!(stdout, "# {line}")?;
+                buf.drain(..=pos);
+              }
+              Ok(())
+            })
+          }
+          TapStream::Stderr => {
+            let stderr_lock = io::stderr();
+            stream_command_output(cmd, &|chunk| {
+              let mut stderr = stderr_lock.lock();
+              stderr.write_all(chunk)
+            })
+          }
+        };
 
         match result {
           Ok(output) => {
@@ -485,6 +606,7 @@ impl<'src, D> Recipe<'src, D> {
     positional: &[String],
     mut evaluator: Evaluator<'src, 'run>,
     tap_output: Option<&Mutex<Vec<u8>>>,
+    tap_stream: TapStream,
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
@@ -604,7 +726,32 @@ impl<'src, D> Recipe<'src, D> {
     );
 
     if tap_output.is_some() {
-      let (result, caught) = capture_command_output(command);
+      let (result, caught) = match tap_stream {
+        TapStream::Buffered => capture_command_output(command),
+        TapStream::Comments => {
+          let stdout_lock = io::stdout();
+          let line_buf = Mutex::new(Vec::<u8>::new());
+          stream_command_output(command, &|chunk| {
+            let mut buf = line_buf.lock().unwrap();
+            buf.extend_from_slice(chunk);
+            let mut stdout = stdout_lock.lock();
+            while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+              let line = String::from_utf8_lossy(&buf[..pos]);
+              let line = line.rsplit('\r').next().unwrap_or(&line);
+              writeln!(stdout, "# {line}")?;
+              buf.drain(..=pos);
+            }
+            Ok(())
+          })
+        }
+        TapStream::Stderr => {
+          let stderr_lock = io::stderr();
+          stream_command_output(command, &|chunk| {
+            let mut stderr = stderr_lock.lock();
+            stderr.write_all(chunk)
+          })
+        }
+      };
 
       match result {
         Ok(output) => {

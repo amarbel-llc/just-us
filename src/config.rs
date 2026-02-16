@@ -41,6 +41,7 @@ pub(crate) struct Config {
   pub(crate) shell_command: bool,
   pub(crate) subcommand: Subcommand,
   pub(crate) output_format: Option<OutputFormat>,
+  pub(crate) tap_stream: Option<TapStream>,
   pub(crate) tempdir: Option<PathBuf>,
   pub(crate) timestamp: bool,
   pub(crate) timestamp_format: String,
@@ -127,6 +128,7 @@ mod arg {
   pub(crate) const SHELL_ARG: &str = "SHELL-ARG";
   pub(crate) const SHELL_COMMAND: &str = "SHELL-COMMAND";
   pub(crate) const OUTPUT_FORMAT: &str = "OUTPUT-FORMAT";
+  pub(crate) const TAP_STREAM: &str = "TAP-STREAM";
   pub(crate) const TEMPDIR: &str = "TEMPDIR";
   pub(crate) const TIMESTAMP: &str = "TIMESTAMP";
   pub(crate) const TIMESTAMP_FORMAT: &str = "TIMESTAMP-FORMAT";
@@ -418,6 +420,15 @@ impl Config {
           .value_parser(clap::value_parser!(OutputFormat))
           .value_name("FORMAT")
           .help("Set output format (default, tap)"),
+      )
+      .arg(
+        Arg::new(arg::TAP_STREAM)
+          .long("tap-stream")
+          .env("JUST_TAP_STREAM")
+          .action(ArgAction::Set)
+          .value_parser(clap::value_parser!(TapStream))
+          .value_name("MODE")
+          .help("Set TAP output streaming mode (buffered, comments, stderr)"),
       )
       .arg(
         Arg::new(arg::TEMPDIR)
@@ -869,6 +880,7 @@ impl Config {
       shell_command: matches.get_flag(arg::SHELL_COMMAND),
       subcommand,
       output_format: matches.get_one::<OutputFormat>(arg::OUTPUT_FORMAT).copied(),
+      tap_stream: matches.get_one::<TapStream>(arg::TAP_STREAM).copied(),
       tempdir: matches.get_one::<PathBuf>(arg::TEMPDIR).map(Into::into),
       timestamp: matches.get_flag(arg::TIMESTAMP),
       timestamp_format: matches

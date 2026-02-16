@@ -28,6 +28,7 @@ pub(crate) enum Keyword {
   ScriptInterpreter,
   Set,
   Shell,
+  TapStream,
   Tempdir,
   True,
   Unexport,

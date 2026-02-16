@@ -95,6 +95,7 @@ struct Settings<'a> {
   positional_arguments: bool,
   quiet: bool,
   shell: Option<Interpreter<'a>>,
+  tap_stream: Option<&'a str>,
   tempdir: Option<&'a str>,
   unstable: bool,
   windows_powershell: bool,
