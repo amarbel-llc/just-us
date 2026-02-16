@@ -433,6 +433,10 @@ impl<'src> Justfile<'src> {
 
       let output = captured_output.filter(|s| !s.is_empty());
 
+      let quiet = recipe.quiet
+        || (module.settings.quiet && !recipe.no_quiet())
+        || config.verbosity.quiet();
+
       let mut stdout = io::stdout().lock();
 
       let test_result = match run_result {
@@ -443,6 +447,7 @@ impl<'src> Justfile<'src> {
           error_message: None,
           exit_code: None,
           output,
+          quiet,
         },
         Err(ref error) => {
           tap.failures += 1;
@@ -453,6 +458,7 @@ impl<'src> Justfile<'src> {
             error_message: Some(format!("{}", error.color_display(Color::never()))),
             exit_code: error.code(),
             output,
+            quiet,
           }
         }
       };

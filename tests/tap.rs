@@ -166,17 +166,23 @@ fn tap_failing_dependency() {
 }
 
 #[test]
-fn tap_quiet_recipe_output_captured() {
+fn tap_quiet_recipe_suppresses_yaml() {
   Test::new()
     .justfile(
       "
-      build:
-        @echo quiet-output
+      @build:
+        echo quiet-output
       ",
     )
     .args(["--output-format", "tap"])
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    quiet-output\n  \\.\\.\\.\n")
+    .stdout(
+      "
+      TAP version 14
+      1..1
+      ok 1 - build
+      ",
+    )
     .stderr("")
     .success();
 }
@@ -257,5 +263,92 @@ fn output_format_cli_overrides_justfile() {
     .arg("build")
     .stdout("hello\n")
     .stderr("echo hello\n")
+    .success();
+}
+
+#[test]
+fn tap_set_quiet_suppresses_yaml() {
+  Test::new()
+    .justfile(
+      "
+      set quiet
+      set output-format := \"tap\"
+
+      build:
+        echo hello
+      ",
+    )
+    .arg("build")
+    .stdout(
+      "
+      TAP version 14
+      1..1
+      ok 1 - build
+      ",
+    )
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_cli_quiet_suppresses_yaml() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .args(["--output-format", "tap", "--quiet"])
+    .arg("build")
+    .stdout(
+      "
+      TAP version 14
+      1..1
+      ok 1 - build
+      ",
+    )
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_quiet_failing_suppresses_yaml() {
+  Test::new()
+    .justfile(
+      "
+      @test:
+        exit 1
+      ",
+    )
+    .args(["--output-format", "tap"])
+    .arg("test")
+    .stdout(
+      "
+      TAP version 14
+      1..1
+      not ok 1 - test
+      ",
+    )
+    .stderr("")
+    .failure();
+}
+
+#[test]
+fn tap_no_quiet_overrides_set_quiet() {
+  Test::new()
+    .justfile(
+      "
+      set quiet
+      set output-format := \"tap\"
+
+      [no-quiet]
+      build:
+        echo hello
+      ",
+    )
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
+    .stderr("")
     .success();
 }

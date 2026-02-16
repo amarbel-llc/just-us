@@ -250,7 +250,7 @@ impl<'src, D> Recipe<'src, D> {
     Some(working_directory)
   }
 
-  fn no_quiet(&self) -> bool {
+  pub(crate) fn no_quiet(&self) -> bool {
     self.attributes.contains(AttributeDiscriminant::NoQuiet)
   }
 

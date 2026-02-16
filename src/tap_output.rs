@@ -7,6 +7,7 @@ pub(crate) struct TapTestResult {
   pub(crate) error_message: Option<String>,
   pub(crate) exit_code: Option<i32>,
   pub(crate) output: Option<String>,
+  pub(crate) quiet: bool,
 }
 
 pub(crate) struct TapWriter {
@@ -46,7 +47,7 @@ fn write_yaml_field(writer: &mut impl Write, key: &str, value: &str) -> io::Resu
 }
 
 fn has_yaml_block(result: &TapTestResult) -> bool {
-  !result.ok || result.output.is_some()
+  !result.quiet && (!result.ok || result.output.is_some())
 }
 
 pub(crate) fn write_test_point(writer: &mut impl Write, result: &TapTestResult) -> io::Result<()> {
@@ -101,6 +102,7 @@ mod tests {
       error_message: None,
       exit_code: None,
       output: None,
+      quiet: false,
     };
     write_test_point(&mut buf, &result).unwrap();
     assert_eq!(String::from_utf8(buf).unwrap(), "ok 1 - build\n");
@@ -116,6 +118,7 @@ mod tests {
       error_message: None,
       exit_code: None,
       output: Some("building\n".into()),
+      quiet: false,
     };
     write_test_point(&mut buf, &result).unwrap();
     assert_eq!(
@@ -134,6 +137,7 @@ mod tests {
       error_message: Some("Recipe `test` failed on line 5 with exit code 1".into()),
       exit_code: Some(1),
       output: None,
+      quiet: false,
     };
     write_test_point(&mut buf, &result).unwrap();
     let output = String::from_utf8(buf).unwrap();
@@ -153,6 +157,7 @@ mod tests {
       error_message: Some("Recipe `test` failed on line 5 with exit code 1".into()),
       exit_code: Some(1),
       output: Some("running tests\nfailed assertion".into()),
+      quiet: false,
     };
     write_test_point(&mut buf, &result).unwrap();
     let output = String::from_utf8(buf).unwrap();
@@ -171,6 +176,7 @@ mod tests {
       error_message: None,
       exit_code: None,
       output: Some("progress\rwarning: done\nline two\r\n".into()),
+      quiet: false,
     };
     write_test_point(&mut buf, &result).unwrap();
     let output = String::from_utf8(buf).unwrap();
@@ -197,6 +203,7 @@ mod tests {
       output: Some(
         "\x1b[32m  indented green\x1b[0m\r\n\x1b[31mred line\x1b[0m\r\n".into(),
       ),
+      quiet: false,
     };
     write_test_point(&mut buf, &result).unwrap();
     let output = String::from_utf8(buf).unwrap();
@@ -224,11 +231,44 @@ mod tests {
       error_message: Some("Recipe `broken` failed for an unknown reason".into()),
       exit_code: None,
       output: None,
+      quiet: false,
     };
     write_test_point(&mut buf, &result).unwrap();
     let output = String::from_utf8(buf).unwrap();
     assert!(output.contains("not ok 1 - broken"));
     assert!(output.contains("severity: fail"));
     assert!(!output.contains("exitcode"));
+  }
+
+  #[test]
+  fn quiet_passing_with_output_suppresses_yaml() {
+    let mut buf = Vec::new();
+    let result = TapTestResult {
+      number: 1,
+      name: "build".into(),
+      ok: true,
+      error_message: None,
+      exit_code: None,
+      output: Some("hello\n".into()),
+      quiet: true,
+    };
+    write_test_point(&mut buf, &result).unwrap();
+    assert_eq!(String::from_utf8(buf).unwrap(), "ok 1 - build\n");
+  }
+
+  #[test]
+  fn quiet_failing_suppresses_yaml() {
+    let mut buf = Vec::new();
+    let result = TapTestResult {
+      number: 1,
+      name: "test".into(),
+      ok: false,
+      error_message: Some("Recipe `test` failed with exit code 1".into()),
+      exit_code: Some(1),
+      output: Some("error output\n".into()),
+      quiet: true,
+    };
+    write_test_point(&mut buf, &result).unwrap();
+    assert_eq!(String::from_utf8(buf).unwrap(), "not ok 1 - test\n");
   }
 }
