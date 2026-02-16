@@ -1,5 +1,58 @@
 use super::*;
 
+/// Capture command output, using a PTY when stdout is a terminal so that
+/// child processes produce colored output.
+#[cfg(unix)]
+fn capture_command_output(mut cmd: Command) -> (io::Result<process::Output>, Option<Signal>) {
+  use std::io::{IsTerminal, Read};
+
+  if io::stdout().is_terminal() {
+    match nix::pty::openpty(None, None) {
+      Ok(pty) => {
+        let slave_clone = match pty.slave.try_clone() {
+          Ok(fd) => fd,
+          Err(e) => return (Err(e), None),
+        };
+        cmd.stdout(Stdio::from(slave_clone));
+        cmd.stderr(Stdio::from(pty.slave));
+
+        let master = pty.master;
+        SignalHandler::spawn(cmd, move |mut child| {
+          let mut output = Vec::new();
+          let mut master_file = fs::File::from(master);
+          loop {
+            let mut buf = [0u8; 4096];
+            match master_file.read(&mut buf) {
+              Ok(0) => break,
+              Ok(n) => output.extend_from_slice(&buf[..n]),
+              Err(e) if e.raw_os_error() == Some(libc::EIO) => break,
+              Err(e) => return Err(e),
+            }
+          }
+          let status = child.wait()?;
+          Ok(process::Output {
+            status,
+            stdout: output,
+            stderr: Vec::new(),
+          })
+        })
+      }
+      Err(e) => (Err(io::Error::from(e)), None),
+    }
+  } else {
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    cmd.output_guard()
+  }
+}
+
+#[cfg(not(unix))]
+fn capture_command_output(mut cmd: Command) -> (io::Result<process::Output>, Option<Signal>) {
+  cmd.stdout(Stdio::piped());
+  cmd.stderr(Stdio::piped());
+  cmd.output_guard()
+}
+
 /// Return a `Error::Signal` if the process was terminated by a signal,
 /// otherwise return an `Error::UnknownFailure`
 fn error_from_signal(recipe: &str, line_number: Option<usize>, exit_status: ExitStatus) -> Error {
@@ -327,10 +380,7 @@ impl<'src, D> Recipe<'src, D> {
         cmd.args(positional);
       }
 
-      if tap_output.is_some() {
-        cmd.stderr(Stdio::piped());
-        cmd.stdout(Stdio::piped());
-      } else if config.verbosity.quiet() {
+      if tap_output.is_none() && config.verbosity.quiet() {
         cmd.stderr(Stdio::null());
         cmd.stdout(Stdio::null());
       }
@@ -349,7 +399,7 @@ impl<'src, D> Recipe<'src, D> {
       );
 
       if tap_output.is_some() {
-        let (result, caught) = cmd.output_guard();
+        let (result, caught) = capture_command_output(cmd);
 
         match result {
           Ok(output) => {
@@ -554,10 +604,7 @@ impl<'src, D> Recipe<'src, D> {
     );
 
     if tap_output.is_some() {
-      command.stderr(Stdio::piped());
-      command.stdout(Stdio::piped());
-
-      let (result, caught) = command.output_guard();
+      let (result, caught) = capture_command_output(command);
 
       match result {
         Ok(output) => {

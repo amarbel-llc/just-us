@@ -109,7 +109,7 @@ impl SignalHandler {
 
   pub(crate) fn spawn<T>(
     mut command: Command,
-    f: impl Fn(process::Child) -> io::Result<T>,
+    f: impl FnOnce(process::Child) -> io::Result<T>,
   ) -> (io::Result<T>, Option<Signal>) {
     let mut instance = Self::instance();
 
@@ -127,6 +127,11 @@ impl SignalHandler {
       }
       Ok(pid) => pid,
     };
+
+    // Reset stdio so parent doesn't hold fds (e.g. PTY slave) that
+    // would prevent EOF detection on the master side.
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
 
     instance.children.insert(pid, command);
 
