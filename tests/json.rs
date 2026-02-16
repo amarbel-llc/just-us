@@ -91,6 +91,7 @@ struct Settings<'a> {
   fallback: bool,
   ignore_comments: bool,
   no_exit_message: bool,
+  output_format: Option<&'a str>,
   positional_arguments: bool,
   quiet: bool,
   shell: Option<Interpreter<'a>>,

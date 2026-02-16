@@ -9,7 +9,7 @@ fn single_passing_recipe() {
         echo hello
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
     .stderr("")
@@ -25,7 +25,7 @@ fn single_failing_recipe() {
         @exit 1
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
@@ -44,7 +44,7 @@ fn multiple_recipes_all_pass() {
         echo linting
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .args(["build", "lint"])
     .stdout_regex("TAP version 14\n1\\.\\.2\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 2 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
     .stderr("")
@@ -66,7 +66,7 @@ fn mixed_results_continues_past_failure() {
         echo linting
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .args(["build", "test", "lint"])
     .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nnot ok 2 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\nok 3 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
     .stderr("")
@@ -82,7 +82,7 @@ fn tap_captures_recipe_output() {
         echo captured-output
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    captured-output\n  \\.\\.\\.\n")
     .stderr("")
@@ -90,7 +90,7 @@ fn tap_captures_recipe_output() {
 }
 
 #[test]
-fn tap_with_env_var() {
+fn output_format_with_env_var() {
   Test::new()
     .justfile(
       "
@@ -98,7 +98,7 @@ fn tap_with_env_var() {
         echo hello
       ",
     )
-    .env("JUST_TAP", "true")
+    .env("JUST_OUTPUT_FORMAT", "tap")
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
     .stderr("")
@@ -117,7 +117,7 @@ fn tap_expands_dependencies() {
         echo building
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.2\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
     .stderr("")
@@ -139,7 +139,7 @@ fn tap_expands_deep_dependencies() {
         echo testing
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
     .stderr("")
@@ -158,7 +158,7 @@ fn tap_failing_dependency() {
         echo building
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.2\nnot ok 1 - compile\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
@@ -174,7 +174,7 @@ fn tap_quiet_recipe_output_captured() {
         @echo quiet-output
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    quiet-output\n  \\.\\.\\.\n")
     .stderr("")
@@ -190,7 +190,7 @@ fn tap_no_output_no_yaml_block() {
         @true
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .arg("build")
     .stdout(
       "
@@ -218,9 +218,44 @@ fn tap_shared_dependency_runs_once() {
         echo testing
       ",
     )
-    .arg("--tap")
+    .args(["--output-format", "tap"])
     .args(["build", "test"])
     .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
     .stderr("")
+    .success();
+}
+
+#[test]
+fn output_format_justfile_setting() {
+  Test::new()
+    .justfile(
+      "
+      set output-format := \"tap\"
+
+      build:
+        echo hello
+      ",
+    )
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn output_format_cli_overrides_justfile() {
+  Test::new()
+    .justfile(
+      "
+      set output-format := \"tap\"
+
+      build:
+        echo hello
+      ",
+    )
+    .args(["--output-format", "default"])
+    .arg("build")
+    .stdout("hello\n")
+    .stderr("echo hello\n")
     .success();
 }

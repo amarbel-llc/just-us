@@ -214,12 +214,12 @@ impl<'src, D> Recipe<'src, D> {
     let suffix = color.suffix();
 
     if context.config.verbosity.loquacious()
-      && context.config.output_format != Some(OutputFormat::Tap)
+      && tap_output.is_none()
     {
       eprintln!("{prefix}===> Running recipe `{}`...{suffix}", self.name);
     }
 
-    if context.config.explain && context.config.output_format != Some(OutputFormat::Tap) {
+    if context.config.explain && tap_output.is_none() {
       if let Some(doc) = self.doc() {
         eprintln!("{prefix}#### {doc}{suffix}");
       }
@@ -289,7 +289,7 @@ impl<'src, D> Recipe<'src, D> {
         continue;
       }
 
-      if config.output_format != Some(OutputFormat::Tap)
+      if tap_output.is_none()
         && (config.dry_run
           || config.verbosity.loquacious()
           || !((quiet_line ^ self.quiet)
@@ -330,7 +330,7 @@ impl<'src, D> Recipe<'src, D> {
       if tap_output.is_some() {
         cmd.stderr(Stdio::piped());
         cmd.stdout(Stdio::piped());
-      } else if config.verbosity.quiet() || config.output_format == Some(OutputFormat::Tap) {
+      } else if config.verbosity.quiet() {
         cmd.stderr(Stdio::null());
         cmd.stdout(Stdio::null());
       }
@@ -438,7 +438,7 @@ impl<'src, D> Recipe<'src, D> {
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
-    if config.output_format != Some(OutputFormat::Tap) {
+    if tap_output.is_none() {
       if let Some(timestamp) = config.timestamp() {
         let color = if config.highlight {
           config.color.command(config.command_color)
@@ -456,7 +456,7 @@ impl<'src, D> Recipe<'src, D> {
       evaluated_lines.push(evaluator.evaluate_line(line, false)?);
     }
 
-    if config.output_format != Some(OutputFormat::Tap)
+    if tap_output.is_none()
       && config.verbosity.loud()
       && (config.dry_run || self.quiet)
     {
