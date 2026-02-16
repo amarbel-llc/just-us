@@ -50,11 +50,15 @@ fn unix() {
 
   let path = tempdir.path().to_owned();
 
+  let xdg_config = path.join(".config");
+  let xdg_config_str = xdg_config.to_str().unwrap();
+
   let tempdir = Test::with_tempdir(tempdir)
     .no_justfile()
     .test_round_trip(false)
     .write("justfile", "@default:\n  echo foo")
     .env("HOME", path.to_str().unwrap())
+    .env("XDG_CONFIG_HOME", xdg_config_str)
     .args(["--global-justfile"])
     .stdout("foo\n")
     .success()
@@ -65,6 +69,7 @@ fn unix() {
     .test_round_trip(false)
     .write(".config/just/justfile", "@default:\n  echo bar")
     .env("HOME", path.to_str().unwrap())
+    .env("XDG_CONFIG_HOME", xdg_config_str)
     .args(["--global-justfile"])
     .stdout("bar\n")
     .success();

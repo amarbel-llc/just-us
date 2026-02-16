@@ -72,6 +72,8 @@
           "edit::status_error"
           "choose::default"
           "choose::status_error"
+          # global justfile test — XDG_CONFIG_HOME in nix sandbox leaks into test
+          "global::unix"
           "quiet::choose_status"
           # working_directory tests — use #!/usr/bin/env sh
           "working_directory::change_working_directory_to_search_justfile_parent"
