@@ -209,7 +209,12 @@ impl<'src> Justfile<'src> {
       });
     }
 
-    if config.output_format == Some(OutputFormat::Tap) {
+    let output_format = config
+      .output_format
+      .or(self.settings.output_format)
+      .unwrap_or_default();
+
+    if output_format == OutputFormat::Tap {
       return self.run_tap(config, &dotenv, &scopes, search, invocations);
     }
 
