@@ -4,6 +4,7 @@ pub(crate) struct TapTestResult {
   pub(crate) number: usize,
   pub(crate) name: String,
   pub(crate) ok: bool,
+  pub(crate) comment: Option<String>,
   pub(crate) error_message: Option<String>,
   pub(crate) exit_code: Option<i32>,
   pub(crate) output: Option<String>,
@@ -52,7 +53,11 @@ fn has_yaml_block(result: &TapTestResult) -> bool {
 
 pub(crate) fn write_test_point(writer: &mut impl Write, result: &TapTestResult) -> io::Result<()> {
   let status = if result.ok { "ok" } else { "not ok" };
-  writeln!(writer, "{status} {} - {}", result.number, result.name)?;
+  if let Some(ref comment) = result.comment {
+    writeln!(writer, "{status} {} - {} # {comment}", result.number, result.name)?;
+  } else {
+    writeln!(writer, "{status} {} - {}", result.number, result.name)?;
+  }
 
   if has_yaml_block(result) {
     writeln!(writer, "  ---")?;
@@ -99,6 +104,7 @@ mod tests {
       number: 1,
       name: "build".into(),
       ok: true,
+      comment: None,
       error_message: None,
       exit_code: None,
       output: None,
@@ -109,12 +115,33 @@ mod tests {
   }
 
   #[test]
+  fn passing_test_point_with_comment() {
+    let mut buf = Vec::new();
+    let result = TapTestResult {
+      number: 1,
+      name: "build".into(),
+      ok: true,
+      comment: Some("Build the project".into()),
+      error_message: None,
+      exit_code: None,
+      output: None,
+      quiet: false,
+    };
+    write_test_point(&mut buf, &result).unwrap();
+    assert_eq!(
+      String::from_utf8(buf).unwrap(),
+      "ok 1 - build # Build the project\n"
+    );
+  }
+
+  #[test]
   fn passing_test_point_with_output() {
     let mut buf = Vec::new();
     let result = TapTestResult {
       number: 1,
       name: "build".into(),
       ok: true,
+      comment: None,
       error_message: None,
       exit_code: None,
       output: Some("building\n".into()),
@@ -134,6 +161,7 @@ mod tests {
       number: 2,
       name: "test".into(),
       ok: false,
+      comment: None,
       error_message: Some("Recipe `test` failed on line 5 with exit code 1".into()),
       exit_code: Some(1),
       output: None,
@@ -154,6 +182,7 @@ mod tests {
       number: 2,
       name: "test".into(),
       ok: false,
+      comment: None,
       error_message: Some("Recipe `test` failed on line 5 with exit code 1".into()),
       exit_code: Some(1),
       output: Some("running tests\nfailed assertion".into()),
@@ -173,6 +202,7 @@ mod tests {
       number: 1,
       name: "build".into(),
       ok: true,
+      comment: None,
       error_message: None,
       exit_code: None,
       output: Some("progress\rwarning: done\nline two\r\n".into()),
@@ -198,6 +228,7 @@ mod tests {
       number: 1,
       name: "build".into(),
       ok: true,
+      comment: None,
       error_message: None,
       exit_code: None,
       output: Some(
@@ -228,6 +259,7 @@ mod tests {
       number: 1,
       name: "broken".into(),
       ok: false,
+      comment: None,
       error_message: Some("Recipe `broken` failed for an unknown reason".into()),
       exit_code: None,
       output: None,
@@ -247,6 +279,7 @@ mod tests {
       number: 1,
       name: "build".into(),
       ok: true,
+      comment: None,
       error_message: None,
       exit_code: None,
       output: Some("hello\n".into()),
@@ -263,6 +296,7 @@ mod tests {
       number: 1,
       name: "test".into(),
       ok: false,
+      comment: None,
       error_message: Some("Recipe `test` failed with exit code 1".into()),
       exit_code: Some(1),
       output: Some("error output\n".into()),

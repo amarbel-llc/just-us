@@ -518,3 +518,74 @@ fn tap_stream_comments_multiline() {
     .stderr("")
     .success();
 }
+
+#[test]
+fn tap_recipe_comment_as_tap_comment() {
+  Test::new()
+    .justfile(
+      "
+      # Build the project
+      build:
+        echo building
+      ",
+    )
+    .args(["--output-format", "tap"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build # Build the project\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_recipe_doc_attribute_as_tap_comment() {
+  Test::new()
+    .justfile(
+      r#"
+      [doc("Run the test suite")]
+      test:
+        echo testing
+      "#,
+    )
+    .args(["--output-format", "tap"])
+    .arg("test")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - test # Run the test suite\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_no_comment_without_doc() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo building
+      ",
+    )
+    .args(["--output-format", "tap"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_multiple_recipes_with_comments() {
+  Test::new()
+    .justfile(
+      "
+      # Compile the source
+      compile:
+        echo compiling
+
+      # Run the linter
+      lint:
+        echo linting
+      ",
+    )
+    .args(["--output-format", "tap"])
+    .args(["compile", "lint"])
+    .stdout_regex("TAP version 14\n1\\.\\.2\nok 1 - compile # Compile the source\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - lint # Run the linter\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
+    .stderr("")
+    .success();
+}

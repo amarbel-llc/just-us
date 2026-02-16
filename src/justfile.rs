@@ -452,11 +452,14 @@ impl<'src> Justfile<'src> {
 
       let mut stdout = io::stdout().lock();
 
+      let comment = recipe.doc().map(Into::into);
+
       let test_result = match run_result {
         Ok(()) => TapTestResult {
           number,
           name: recipe.name().into(),
           ok: true,
+          comment,
           error_message: None,
           exit_code: None,
           output,
@@ -468,6 +471,7 @@ impl<'src> Justfile<'src> {
             number,
             name: recipe.name().into(),
             ok: false,
+            comment,
             error_message: Some(format!("{}", error.color_display(Color::never()))),
             exit_code: error.code(),
             output,
