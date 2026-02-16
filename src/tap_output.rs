@@ -35,9 +35,11 @@ fn write_yaml_field(writer: &mut impl Write, key: &str, value: &str) -> io::Resu
   if value.contains('\n') {
     writeln!(writer, "  {key}: |")?;
     for line in value.lines() {
+      let line = line.rsplit('\r').next().unwrap_or(line);
       writeln!(writer, "    {line}")?;
     }
   } else {
+    let value = value.rsplit('\r').next().unwrap_or(value);
     writeln!(writer, "  {key}: \"{value}\"")?;
   }
   Ok(())
@@ -157,6 +159,59 @@ mod tests {
     assert!(output.contains("output: |"));
     assert!(output.contains("    running tests"));
     assert!(output.contains("    failed assertion"));
+  }
+
+  #[test]
+  fn output_strips_carriage_returns() {
+    let mut buf = Vec::new();
+    let result = TapTestResult {
+      number: 1,
+      name: "build".into(),
+      ok: true,
+      error_message: None,
+      exit_code: None,
+      output: Some("progress\rwarning: done\nline two\r\n".into()),
+    };
+    write_test_point(&mut buf, &result).unwrap();
+    let output = String::from_utf8(buf).unwrap();
+    assert!(
+      output.contains("    warning: done\n"),
+      "\\r-overwritten prefix should be stripped: {output:?}"
+    );
+    assert!(
+      output.contains("    line two\n"),
+      "trailing \\r should be stripped: {output:?}"
+    );
+    assert!(!output.contains('\r'), "no carriage returns in output: {output:?}");
+  }
+
+  #[test]
+  fn colored_output_preserves_indentation() {
+    let mut buf = Vec::new();
+    let result = TapTestResult {
+      number: 1,
+      name: "build".into(),
+      ok: true,
+      error_message: None,
+      exit_code: None,
+      output: Some(
+        "\x1b[32m  indented green\x1b[0m\r\n\x1b[31mred line\x1b[0m\r\n".into(),
+      ),
+    };
+    write_test_point(&mut buf, &result).unwrap();
+    let output = String::from_utf8(buf).unwrap();
+    assert!(
+      output.contains("    \x1b[32m  indented green\x1b[0m\n"),
+      "colored indented output should be preserved: {output:?}"
+    );
+    assert!(
+      output.contains("    \x1b[31mred line\x1b[0m\n"),
+      "colored output should be preserved: {output:?}"
+    );
+    assert!(
+      !output.contains('\r'),
+      "no carriage returns in output: {output:?}"
+    );
   }
 
   #[test]
