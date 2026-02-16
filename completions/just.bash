@@ -120,6 +120,10 @@ _just() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --output-format)
+                    COMPREPLY=($(compgen -W "default tap" -- "${cur}"))
+                    return 0
+                    ;;
                 --tempdir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0

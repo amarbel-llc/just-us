@@ -32,6 +32,7 @@ _just() {
 '*--set=[Override <VARIABLE> with <VALUE>]: :(_just_variables)' \
 '--shell=[Invoke <SHELL> to run recipes]: :_default' \
 '*--shell-arg=[Invoke shell with <SHELL-ARG> as an argument]: :_default' \
+'--output-format=[Set output format (default, tap)]:FORMAT:(default tap)' \
 '--tempdir=[Save temporary files to <TEMPDIR>.]: :_files' \
 '--timestamp-format=[Timestamp format string]: :_default' \
 '-d+[Use <WORKING-DIRECTORY> as working directory. --justfile must also be set]: :_files' \
@@ -64,7 +65,6 @@ _just() {
 '(-n --dry-run)--quiet[Suppress all output]' \
 '--allow-missing[Ignore missing recipe and module errors]' \
 '--shell-command[Invoke <COMMAND> with the shell used to run recipe lines and backticks]' \
-'--output-format[Set output format (default, tap)]' \
 '--timestamp[Print recipe command timestamps]' \
 '-u[Return list and summary entries in source order]' \
 '--unsorted[Return list and summary entries in source order]' \
