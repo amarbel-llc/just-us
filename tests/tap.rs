@@ -11,7 +11,7 @@ fn single_passing_recipe() {
     )
     .arg("--tap")
     .arg("build")
-    .stdout_regex("TAP version 14\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n1\\.\\.1\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -27,7 +27,7 @@ fn single_failing_recipe() {
     )
     .arg("--tap")
     .arg("test")
-    .stdout_regex("TAP version 14\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n1\\.\\.1\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -46,7 +46,7 @@ fn multiple_recipes_all_pass() {
     )
     .arg("--tap")
     .args(["build", "lint"])
-    .stdout_regex("TAP version 14\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 2 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n1\\.\\.2\n")
+    .stdout_regex("TAP version 14\n1\\.\\.2\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 2 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -68,7 +68,7 @@ fn mixed_results_continues_past_failure() {
     )
     .arg("--tap")
     .args(["build", "test", "lint"])
-    .stdout_regex("TAP version 14\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nnot ok 2 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\nok 3 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n1\\.\\.3\n")
+    .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nnot ok 2 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\nok 3 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -84,7 +84,7 @@ fn tap_captures_recipe_output() {
     )
     .arg("--tap")
     .arg("build")
-    .stdout_regex("TAP version 14\nok 1 - build\n  ---\n  output: \\|\n    captured-output\n  \\.\\.\\.\n1\\.\\.1\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    captured-output\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -100,7 +100,7 @@ fn tap_with_env_var() {
     )
     .env("JUST_TAP", "true")
     .arg("build")
-    .stdout_regex("TAP version 14\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n1\\.\\.1\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -119,7 +119,7 @@ fn tap_expands_dependencies() {
     )
     .arg("--tap")
     .arg("build")
-    .stdout_regex("TAP version 14\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n1\\.\\.2\n")
+    .stdout_regex("TAP version 14\n1\\.\\.2\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -141,7 +141,7 @@ fn tap_expands_deep_dependencies() {
     )
     .arg("--tap")
     .arg("test")
-    .stdout_regex("TAP version 14\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n1\\.\\.3\n")
+    .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -160,7 +160,7 @@ fn tap_failing_dependency() {
     )
     .arg("--tap")
     .arg("build")
-    .stdout_regex("TAP version 14\nnot ok 1 - compile\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n1\\.\\.1\n")
+    .stdout_regex("TAP version 14\n1\\.\\.2\nnot ok 1 - compile\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -176,7 +176,7 @@ fn tap_quiet_recipe_output_captured() {
     )
     .arg("--tap")
     .arg("build")
-    .stdout_regex("TAP version 14\nok 1 - build\n  ---\n  output: \\|\n    quiet-output\n  \\.\\.\\.\n1\\.\\.1\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    quiet-output\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -195,8 +195,8 @@ fn tap_no_output_no_yaml_block() {
     .stdout(
       "
       TAP version 14
-      ok 1 - build
       1..1
+      ok 1 - build
       ",
     )
     .stderr("")
@@ -220,7 +220,7 @@ fn tap_shared_dependency_runs_once() {
     )
     .arg("--tap")
     .args(["build", "test"])
-    .stdout_regex("TAP version 14\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n1\\.\\.3\n")
+    .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }

@@ -231,6 +231,26 @@ impl<'src> Justfile<'src> {
     Ok(())
   }
 
+  fn count_recipes(
+    recipe: &Recipe<'src>,
+    seen: &mut BTreeSet<String>,
+    no_dependencies: bool,
+  ) -> usize {
+    if !seen.insert(recipe.namepath().to_owned()) {
+      return 0;
+    }
+
+    let mut count = 1;
+
+    if !no_dependencies {
+      for dep in &recipe.dependencies {
+        count += Self::count_recipes(&dep.recipe, seen, no_dependencies);
+      }
+    }
+
+    count
+  }
+
   fn run_tap(
     &self,
     config: &Config,
@@ -241,7 +261,15 @@ impl<'src> Justfile<'src> {
   ) -> RunResult<'src> {
     let mut stdout = io::stdout().lock();
 
+    let mut seen = BTreeSet::<String>::new();
+    let mut plan_count = 0;
+    for invocation in &invocations {
+      plan_count += Self::count_recipes(invocation.recipe, &mut seen, config.no_dependencies);
+    }
+
     tap_output::write_version(&mut stdout).map_err(|io_error| Error::StdoutIo { io_error })?;
+    tap_output::write_plan(&mut stdout, plan_count)
+      .map_err(|io_error| Error::StdoutIo { io_error })?;
 
     let tap_writer = Mutex::new(TapWriter::new());
     let ran = Ran::default();
@@ -261,9 +289,6 @@ impl<'src> Justfile<'src> {
     }
 
     let tap = tap_writer.into_inner().unwrap();
-
-    tap_output::write_plan(&mut stdout, tap.counter)
-      .map_err(|io_error| Error::StdoutIo { io_error })?;
 
     if tap.failures > 0 {
       Err(Error::TapFailure {
