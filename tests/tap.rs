@@ -364,7 +364,7 @@ fn tap_stream_comments_single_recipe() {
     )
     .args(["--output-format", "tap", "--tap-stream", "comments"])
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -380,7 +380,7 @@ fn tap_stream_comments_failing() {
     )
     .args(["--output-format", "tap", "--tap-stream", "comments"])
     .arg("test")
-    .stdout_regex("TAP version 14\n1\\.\\.1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -396,7 +396,7 @@ fn tap_stream_comments_no_output_field() {
     )
     .args(["--output-format", "tap", "--tap-stream", "comments"])
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n$")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n$")
     .stderr("")
     .success();
 }
@@ -461,7 +461,7 @@ fn tap_stream_justfile_setting() {
       "#,
     )
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -497,7 +497,7 @@ fn tap_stream_env_var() {
     .args(["--output-format", "tap"])
     .env("JUST_TAP_STREAM", "comments")
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -514,7 +514,7 @@ fn tap_stream_comments_multiline() {
     )
     .args(["--output-format", "tap", "--tap-stream", "comments"])
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# line1\n# line2\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# line1\n# line2\nok 1 - build\n")
     .stderr("")
     .success();
 }
