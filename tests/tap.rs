@@ -589,3 +589,19 @@ fn tap_multiple_recipes_with_comments() {
     .stderr("")
     .success();
 }
+
+#[test]
+fn tap_stream_streamed_output_canonical_name() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "streamed-output"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
+    .stderr("")
+    .success();
+}
