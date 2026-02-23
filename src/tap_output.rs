@@ -33,6 +33,10 @@ pub(crate) fn write_plan(writer: &mut impl Write, count: usize) -> io::Result<()
   writeln!(writer, "1..{count}")
 }
 
+pub(crate) fn write_pragma(writer: &mut impl Write, name: &str) -> io::Result<()> {
+  writeln!(writer, "pragma +{name}")
+}
+
 fn write_yaml_field(writer: &mut impl Write, key: &str, value: &str) -> io::Result<()> {
   if value.contains('\n') {
     writeln!(writer, "  {key}: |")?;
@@ -287,6 +291,16 @@ mod tests {
     };
     write_test_point(&mut buf, &result).unwrap();
     assert_eq!(String::from_utf8(buf).unwrap(), "ok 1 - build\n");
+  }
+
+  #[test]
+  fn pragma_line() {
+    let mut buf = Vec::new();
+    write_pragma(&mut buf, "streamed-output").unwrap();
+    assert_eq!(
+      String::from_utf8(buf).unwrap(),
+      "pragma +streamed-output\n"
+    );
   }
 
   #[test]
