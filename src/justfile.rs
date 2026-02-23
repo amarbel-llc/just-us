@@ -282,6 +282,11 @@ impl<'src> Justfile<'src> {
       .or(self.settings.tap_stream)
       .unwrap_or_default();
 
+    if tap_stream == TapStream::StreamedOutput {
+      tap_output::write_pragma(&mut stdout, "streamed-output")
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
+    }
+
     let tap_writer = Mutex::new(TapWriter::new());
     let ran = Ran::default();
 
