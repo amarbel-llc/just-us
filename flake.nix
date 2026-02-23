@@ -111,7 +111,11 @@
           just = just;
         };
 
-        devShells.default = rust.devShells.${system}.default;
+        devShells.default = rust.devShells.${system}.default.overrideAttrs (old: {
+          nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
+            pkgs.bashInteractive
+          ];
+        });
       }
     );
 }
