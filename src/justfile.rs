@@ -435,7 +435,7 @@ impl<'src> Justfile<'src> {
       tap.counter += 1;
       let number = tap.counter;
 
-      let output = if tap_stream == TapStream::Comments {
+      let output = if tap_stream == TapStream::StreamedOutput {
         None
       } else {
         tap_output_buf

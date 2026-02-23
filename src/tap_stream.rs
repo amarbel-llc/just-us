@@ -5,6 +5,8 @@ use super::*;
 pub(crate) enum TapStream {
   #[default]
   Buffered,
-  Comments,
+  #[strum(serialize = "comments")]
+  #[value(alias = "comments")]
+  StreamedOutput,
   Stderr,
 }

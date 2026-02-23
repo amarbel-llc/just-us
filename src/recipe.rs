@@ -497,7 +497,7 @@ impl<'src, D> Recipe<'src, D> {
       if tap_output.is_some() {
         let (result, caught) = match tap_stream {
           TapStream::Buffered => capture_command_output(cmd),
-          TapStream::Comments => {
+          TapStream::StreamedOutput => {
             let stdout_lock = io::stdout();
             let line_buf = Mutex::new(Vec::<u8>::new());
             stream_command_output(cmd, &|chunk| {
@@ -728,7 +728,7 @@ impl<'src, D> Recipe<'src, D> {
     if tap_output.is_some() {
       let (result, caught) = match tap_stream {
         TapStream::Buffered => capture_command_output(command),
-        TapStream::Comments => {
+        TapStream::StreamedOutput => {
           let stdout_lock = io::stdout();
           let line_buf = Mutex::new(Vec::<u8>::new());
           stream_command_output(command, &|chunk| {
