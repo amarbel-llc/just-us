@@ -1,2 +1,2 @@
 
-- [ ] add support for tap14+streamed_output
+- [x] add support for tap14+streamed_output
