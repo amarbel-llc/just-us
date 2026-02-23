@@ -125,7 +125,7 @@ _just() {
                     return 0
                     ;;
                 --tap-stream)
-                    COMPREPLY=($(compgen -W "buffered comments stderr" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "buffered comments stderr streamed-output" -- "${cur}"))
                     return 0
                     ;;
                 --tempdir)
