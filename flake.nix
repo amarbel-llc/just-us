@@ -11,6 +11,7 @@
     };
     crane.url = "github:ipetkov/crane";
     rust.url = "github:amarbel-llc/eng?dir=devenvs/rust";
+    purse-first.url = "github:amarbel-llc/purse-first";
   };
 
   outputs =
@@ -22,6 +23,7 @@
       rust-overlay,
       crane,
       rust,
+      purse-first,
     }:
     utils.lib.eachDefaultSystem (
       system:
@@ -104,11 +106,30 @@
             cargoTestExtraArgs = "-- ${skipArgs}";
           }
         );
+
+        just-us-agents-unwrapped = craneLib.buildPackage (
+          commonArgs
+          // {
+            inherit cargoArtifacts;
+            cargoExtraArgs = "-p just-us-mcps";
+            doCheck = false;
+          }
+        );
+
+        just-us-agents = pkgs.runCommand "just-us-agents" { } ''
+          mkdir -p $out/bin
+          cp ${just-us-agents-unwrapped}/bin/just-us-agents $out/bin/
+
+          ${purse-first.packages.${system}.purse-first}/bin/purse-first generate-plugin \
+            --root ${./.} \
+            --output $out
+        '';
       in
       {
         packages = {
           default = just;
           just = just;
+          just-us-agents = just-us-agents;
         };
 
         devShells.default = rust.devShells.${system}.default.overrideAttrs (old: {
