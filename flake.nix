@@ -111,7 +111,7 @@
           commonArgs
           // {
             inherit cargoArtifacts;
-            cargoExtraArgs = "-p just-us-mcps";
+            cargoExtraArgs = "-p just-us-agents";
             doCheck = false;
           }
         );

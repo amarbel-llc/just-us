@@ -13,11 +13,11 @@
 ### Task 1: Add async-graphql dependency
 
 **Files:**
-- Modify: `crates/just-us-mcps/Cargo.toml`
+- Modify: `crates/just-us-agents/Cargo.toml`
 
 **Step 1: Add async-graphql to dependencies**
 
-In `crates/just-us-mcps/Cargo.toml`, add to `[dependencies]`:
+In `crates/just-us-agents/Cargo.toml`, add to `[dependencies]`:
 
 ```toml
 async-graphql = "7"
@@ -25,14 +25,14 @@ async-graphql = "7"
 
 **Step 2: Verify it compiles**
 
-Run: `cargo check -p just-us-mcps`
+Run: `cargo check -p just-us-agents`
 Expected: compiles with no errors
 
 **Step 3: Commit**
 
 ```bash
-git add crates/just-us-mcps/Cargo.toml Cargo.lock
-git commit -m "chore: add async-graphql dependency to just-us-mcps"
+git add crates/just-us-agents/Cargo.toml Cargo.lock
+git commit -m "chore: add async-graphql dependency to just-us-agents"
 ```
 
 ---
@@ -40,9 +40,9 @@ git commit -m "chore: add async-graphql dependency to just-us-mcps"
 ### Task 2: Create GraphQL types
 
 **Files:**
-- Create: `crates/just-us-mcps/src/graphql/types.rs`
-- Create: `crates/just-us-mcps/src/graphql/mod.rs`
-- Modify: `crates/just-us-mcps/src/main.rs` (add `mod graphql;`)
+- Create: `crates/just-us-agents/src/graphql/types.rs`
+- Create: `crates/just-us-agents/src/graphql/mod.rs`
+- Modify: `crates/just-us-agents/src/main.rs` (add `mod graphql;`)
 
 The `just --dump --dump-format json` output has recipes as a JSON map where keys
 are recipe names. Each recipe object looks like:
@@ -83,7 +83,7 @@ representation.
 
 **Step 1: Create types.rs with GraphQL types and serde deserialization**
 
-Create `crates/just-us-mcps/src/graphql/types.rs`:
+Create `crates/just-us-agents/src/graphql/types.rs`:
 
 ```rust
 use async_graphql::{Enum, SimpleObject};
@@ -197,7 +197,7 @@ impl From<DependencyRaw> for Dependency {
 
 **Step 2: Create mod.rs**
 
-Create `crates/just-us-mcps/src/graphql/mod.rs`:
+Create `crates/just-us-agents/src/graphql/mod.rs`:
 
 ```rust
 pub mod schema;
@@ -206,19 +206,19 @@ pub mod types;
 
 **Step 3: Add module declaration to main.rs**
 
-Add `mod graphql;` to the top of `crates/just-us-mcps/src/main.rs`, after the
+Add `mod graphql;` to the top of `crates/just-us-agents/src/main.rs`, after the
 existing `mod` declarations.
 
 **Step 4: Verify it compiles**
 
-Run: `cargo check -p just-us-mcps`
+Run: `cargo check -p just-us-agents`
 Expected: compiles (schema module is empty but declared, that's fine — it will
 warn about unused; that's OK for now)
 
 **Step 5: Commit**
 
 ```bash
-git add crates/just-us-mcps/src/graphql/
+git add crates/just-us-agents/src/graphql/
 git commit -m "feat: add graphql types for justfile recipes"
 ```
 
@@ -227,11 +227,11 @@ git commit -m "feat: add graphql types for justfile recipes"
 ### Task 3: Create GraphQL schema and query root
 
 **Files:**
-- Create: `crates/just-us-mcps/src/graphql/schema.rs`
+- Create: `crates/just-us-agents/src/graphql/schema.rs`
 
 **Step 1: Create schema.rs with query root**
 
-Create `crates/just-us-mcps/src/graphql/schema.rs`:
+Create `crates/just-us-agents/src/graphql/schema.rs`:
 
 ```rust
 use async_graphql::{Context, EmptyMutation, EmptySubscription, Object, Schema};
@@ -265,13 +265,13 @@ pub fn build_schema(recipes: Vec<Recipe>) -> JustfileSchema {
 
 **Step 2: Verify it compiles**
 
-Run: `cargo check -p just-us-mcps`
+Run: `cargo check -p just-us-agents`
 Expected: compiles (may warn about unused imports — that's fine for now)
 
 **Step 3: Commit**
 
 ```bash
-git add crates/just-us-mcps/src/graphql/schema.rs
+git add crates/just-us-agents/src/graphql/schema.rs
 git commit -m "feat: add graphql schema with recipe queries"
 ```
 
@@ -280,12 +280,12 @@ git commit -m "feat: add graphql schema with recipe queries"
 ### Task 4: Add graphql subcommand and stdio server loop
 
 **Files:**
-- Modify: `crates/just-us-mcps/src/graphql/mod.rs`
-- Modify: `crates/just-us-mcps/src/main.rs`
+- Modify: `crates/just-us-agents/src/graphql/mod.rs`
+- Modify: `crates/just-us-agents/src/main.rs`
 
 **Step 1: Add run_graphql_server to mod.rs**
 
-Replace `crates/just-us-mcps/src/graphql/mod.rs` with:
+Replace `crates/just-us-agents/src/graphql/mod.rs` with:
 
 ```rust
 pub mod schema;
@@ -350,7 +350,7 @@ pub async fn run_graphql_server(just_binary: String) -> Result<(), Box<dyn std::
 
 **Step 2: Refactor main.rs to add graphql subcommand**
 
-Replace `crates/just-us-mcps/src/main.rs` with:
+Replace `crates/just-us-agents/src/main.rs` with:
 
 ```rust
 mod graphql;
@@ -415,13 +415,13 @@ async fn run_mcp_server(just_binary: String) -> Result<(), Box<dyn std::error::E
 
 **Step 3: Verify it compiles**
 
-Run: `cargo check -p just-us-mcps`
+Run: `cargo check -p just-us-agents`
 Expected: compiles with no errors
 
 **Step 4: Commit**
 
 ```bash
-git add crates/just-us-mcps/src/main.rs crates/just-us-mcps/src/graphql/mod.rs
+git add crates/just-us-agents/src/main.rs crates/just-us-agents/src/graphql/mod.rs
 git commit -m "feat: add graphql subcommand with stdio server loop"
 ```
 
@@ -433,7 +433,7 @@ git commit -m "feat: add graphql subcommand with stdio server loop"
 
 **Step 1: Build the binary**
 
-Run: `cargo build -p just-us-mcps`
+Run: `cargo build -p just-us-agents`
 Expected: builds successfully
 
 **Step 2: Smoke test the graphql subcommand**
@@ -441,7 +441,7 @@ Expected: builds successfully
 Run from the repo root (which has a justfile):
 
 ```bash
-echo '{"query":"{ recipes { name doc } }"}' | cargo run -p just-us-mcps -- graphql
+echo '{"query":"{ recipes { name doc } }"}' | cargo run -p just-us-agents -- graphql
 ```
 
 Expected: a single JSON line containing `"data"` with a `"recipes"` array, each
@@ -450,7 +450,7 @@ entry having `"name"` and `"doc"` fields.
 **Step 3: Test recipe lookup by name**
 
 ```bash
-echo '{"query":"{ recipe(name: \"test\") { name doc quiet private parameters { name kind default } dependencies { recipe } } }"}' | cargo run -p just-us-mcps -- graphql
+echo '{"query":"{ recipe(name: \"test\") { name doc quiet private parameters { name kind default } dependencies { recipe } } }"}' | cargo run -p just-us-agents -- graphql
 ```
 
 Expected: a JSON response with the `test` recipe's details.
@@ -458,7 +458,7 @@ Expected: a JSON response with the `test` recipe's details.
 **Step 4: Test invalid input**
 
 ```bash
-echo 'not json' | cargo run -p just-us-mcps -- graphql
+echo 'not json' | cargo run -p just-us-agents -- graphql
 ```
 
 Expected: a JSON error response with `"invalid request"` message.
@@ -466,7 +466,7 @@ Expected: a JSON error response with `"invalid request"` message.
 **Step 5: Verify MCP mode still works**
 
 ```bash
-echo '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}},"id":1}' | cargo run -p just-us-mcps
+echo '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.1.0"}},"id":1}' | cargo run -p just-us-agents
 ```
 
 Expected: JSON-RPC response (MCP still works as default).

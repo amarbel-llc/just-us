@@ -60,7 +60,7 @@ type Dependency {
 ## Module Structure
 
 ```
-crates/just-us-mcps/src/
+crates/just-us-agents/src/
   main.rs          # add clap subcommand: graphql
   graphql/
     mod.rs         # re-exports, run_graphql_server() entry point
