@@ -1,3 +1,4 @@
+mod graphql;
 mod helpers;
 mod tools;
 
