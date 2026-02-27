@@ -127,7 +127,13 @@
       in
       {
         packages = {
-          default = just;
+          default = pkgs.symlinkJoin {
+            name = "just-us";
+            paths = [
+              just
+              just-us-agents
+            ];
+          };
           just = just;
           just-us-agents = just-us-agents;
         };
