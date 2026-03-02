@@ -1,5 +1,19 @@
 use {super::*, serde::Serialize};
 
+struct TapTally {
+  counter: usize,
+  failures: usize,
+}
+
+impl TapTally {
+  fn new() -> Self {
+    Self {
+      counter: 0,
+      failures: 0,
+    }
+  }
+}
+
 #[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct Justfile<'src> {
   pub(crate) aliases: Table<'src, Alias<'src>>,
@@ -273,8 +287,8 @@ impl<'src> Justfile<'src> {
       plan_count += Self::count_recipes(invocation.recipe, &mut seen, config.no_dependencies);
     }
 
-    tap_output::write_version(&mut stdout).map_err(|io_error| Error::StdoutIo { io_error })?;
-    tap_output::write_plan(&mut stdout, plan_count)
+    tap_dancer::write_version(&mut stdout).map_err(|io_error| Error::StdoutIo { io_error })?;
+    tap_dancer::write_plan(&mut stdout, plan_count)
       .map_err(|io_error| Error::StdoutIo { io_error })?;
 
     let tap_stream = config
@@ -283,11 +297,11 @@ impl<'src> Justfile<'src> {
       .unwrap_or_default();
 
     if tap_stream == TapStream::StreamedOutput {
-      tap_output::write_pragma(&mut stdout, "streamed-output")
+      tap_dancer::write_pragma(&mut stdout, "streamed-output", true)
         .map_err(|io_error| Error::StdoutIo { io_error })?;
     }
 
-    let tap_writer = Mutex::new(TapWriter::new());
+    let tap_tally = Mutex::new(TapTally::new());
     let ran = Ran::default();
 
     for invocation in &invocations {
@@ -300,12 +314,12 @@ impl<'src> Justfile<'src> {
         invocation.recipe,
         scopes,
         search,
-        Some(&tap_writer),
+        Some(&tap_tally),
         tap_stream,
       );
     }
 
-    let tap = tap_writer.into_inner().unwrap();
+    let tap = tap_tally.into_inner().unwrap();
 
     if tap.failures > 0 {
       Err(Error::TapFailure {
@@ -358,7 +372,7 @@ impl<'src> Justfile<'src> {
     recipe: &Recipe<'src>,
     scopes: &BTreeMap<String, (&Self, &Scope<'src, '_>)>,
     search: &Search,
-    tap: Option<&Mutex<TapWriter>>,
+    tap: Option<&Mutex<TapTally>>,
     tap_stream: TapStream,
   ) -> RunResult<'src> {
     {
@@ -460,32 +474,32 @@ impl<'src> Justfile<'src> {
       let comment = recipe.doc().map(Into::into);
 
       let test_result = match run_result {
-        Ok(()) => TapTestResult {
+        Ok(()) => tap_dancer::TestResult {
           number,
           name: recipe.name().into(),
           ok: true,
-          comment,
+          directive: comment,
           error_message: None,
           exit_code: None,
           output,
-          quiet,
+          suppress_yaml: quiet,
         },
         Err(ref error) => {
           tap.failures += 1;
-          TapTestResult {
+          tap_dancer::TestResult {
             number,
             name: recipe.name().into(),
             ok: false,
-            comment,
+            directive: comment,
             error_message: Some(format!("{}", error.color_display(Color::never()))),
             exit_code: error.code(),
             output,
-            quiet,
+            suppress_yaml: quiet,
           }
         }
       };
 
-      tap_output::write_test_point(&mut stdout, &test_result)
+      tap_dancer::write_test_point(&mut stdout, &test_result)
         .map_err(|io_error| Error::StdoutIo { io_error })?;
 
       if let Err(error) = run_result {
@@ -522,7 +536,7 @@ impl<'src> Justfile<'src> {
     recipe: &Recipe<'src>,
     scopes: &BTreeMap<String, (&Self, &Scope<'src, 'run>)>,
     search: &Search,
-    tap: Option<&Mutex<TapWriter>>,
+    tap: Option<&Mutex<TapTally>>,
     tap_stream: TapStream,
   ) -> RunResult<'src> {
     if context.config.no_dependencies {

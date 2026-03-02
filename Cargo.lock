@@ -1025,6 +1025,7 @@ dependencies = [
  "similar",
  "snafu",
  "strum",
+ "tap-dancer",
  "target",
  "tempfile",
  "temptree",
@@ -1678,6 +1679,11 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "tap-dancer"
+version = "0.1.0"
+source = "git+https://github.com/amarbel-llc/purse-first#39c97a8f838d661406f088d0de334b34e3af3b9b"
 
 [[package]]
 name = "target"

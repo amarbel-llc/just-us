@@ -94,7 +94,6 @@ pub(crate) use {
     switch::Switch,
     table::Table,
     output_format::OutputFormat,
-    tap_output::{TapTestResult, TapWriter},
     tap_stream::TapStream,
     thunk::Thunk,
     token::Token,
@@ -285,7 +284,6 @@ mod suggestion;
 mod switch;
 mod table;
 mod output_format;
-mod tap_output;
 mod tap_stream;
 mod thunk;
 mod token;
