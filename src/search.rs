@@ -266,7 +266,7 @@ mod tests {
   #[test]
   fn not_found() {
     let tmp = testing::tempdir();
-    match Search::justfile(None, tmp.path()) {
+    match Search::justfile(Some(tmp.path()), tmp.path()) {
       Err(SearchError::NotFound) => {}
       _ => panic!("No justfile found error was expected"),
     }
