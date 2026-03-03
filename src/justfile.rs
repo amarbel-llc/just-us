@@ -1,15 +1,17 @@
 use {super::*, serde::Serialize};
 
 struct TapTally {
+  color: bool,
   counter: usize,
   failures: usize,
 }
 
 impl TapTally {
-  fn new() -> Self {
+  fn new(color: bool) -> Self {
     Self {
       counter: 0,
       failures: 0,
+      color,
     }
   }
 }
@@ -279,7 +281,7 @@ impl<'src> Justfile<'src> {
     search: &Search,
     invocations: Vec<Invocation<'src, '_>>,
   ) -> RunResult<'src> {
-    let mut stdout = io::stdout().lock();
+    let color = config.color.stdout().active();
 
     let mut seen = BTreeSet::<String>::new();
     let mut plan_count = 0;
@@ -287,21 +289,26 @@ impl<'src> Justfile<'src> {
       plan_count += Self::count_recipes(invocation.recipe, &mut seen, config.no_dependencies);
     }
 
-    tap_dancer::write_version(&mut stdout).map_err(|io_error| Error::StdoutIo { io_error })?;
-    tap_dancer::write_plan(&mut stdout, plan_count)
-      .map_err(|io_error| Error::StdoutIo { io_error })?;
-
     let tap_stream = config
       .tap_stream
       .or(self.settings.tap_stream)
       .unwrap_or_default();
 
-    if tap_stream == TapStream::StreamedOutput {
-      tap_dancer::write_pragma(&mut stdout, "streamed-output", true)
+    {
+      let mut stdout = io::stdout().lock();
+      let mut writer = tap_dancer::TapWriter::new_color(&mut stdout, color)
         .map_err(|io_error| Error::StdoutIo { io_error })?;
+      writer
+        .plan_ahead(plan_count)
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
+      if tap_stream == TapStream::StreamedOutput {
+        writer
+          .pragma("streamed-output", true)
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+      }
     }
 
-    let tap_tally = Mutex::new(TapTally::new());
+    let tap_tally = Mutex::new(TapTally::new(color));
     let ran = Ran::default();
 
     for invocation in &invocations {
@@ -469,8 +476,6 @@ impl<'src> Justfile<'src> {
         || (module.settings.quiet && !recipe.no_quiet())
         || config.verbosity.quiet();
 
-      let mut stdout = io::stdout().lock();
-
       let comment = recipe.doc().map(Into::into);
 
       let test_result = match run_result {
@@ -499,7 +504,10 @@ impl<'src> Justfile<'src> {
         }
       };
 
-      tap_dancer::write_test_point(&mut stdout, &test_result)
+      let mut stdout = io::stdout().lock();
+      let mut writer = tap_dancer::TapWriter::bare(&mut stdout, tap.color);
+      writer
+        .test_point(&test_result)
         .map_err(|io_error| Error::StdoutIo { io_error })?;
 
       if let Err(error) = run_result {
