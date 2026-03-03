@@ -605,3 +605,57 @@ fn tap_stream_streamed_output_canonical_name() {
     .stderr("")
     .success();
 }
+
+#[test]
+fn tap_color_always_colorizes_ok() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        @true
+      ",
+    )
+    .args(["--output-format", "tap", "--color", "always"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n\x1b\\[32mok\x1b\\[0m 1 - build\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_color_always_colorizes_not_ok() {
+  Test::new()
+    .justfile(
+      "
+      @test:
+        exit 1
+      ",
+    )
+    .args(["--output-format", "tap", "--color", "always"])
+    .arg("test")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n\x1b\\[31mnot ok\x1b\\[0m 1 - test\n")
+    .stderr("")
+    .failure();
+}
+
+#[test]
+fn tap_color_never_no_ansi() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        @true
+      ",
+    )
+    .args(["--output-format", "tap", "--color", "never"])
+    .arg("build")
+    .stdout(
+      "
+      TAP version 14
+      1..1
+      ok 1 - build
+      ",
+    )
+    .stderr("")
+    .success();
+}
