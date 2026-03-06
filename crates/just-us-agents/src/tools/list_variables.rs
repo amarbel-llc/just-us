@@ -29,6 +29,9 @@ impl Tool for ListVariablesTool {
                     "type": "string",
                     "description": "Path to a specific justfile"
                 }
+            },
+            "dependentRequired": {
+                "working_directory": ["justfile"]
             }
         })
     }

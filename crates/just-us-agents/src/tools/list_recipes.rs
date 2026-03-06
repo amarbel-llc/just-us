@@ -15,8 +15,8 @@ impl Tool for ListRecipesTool {
 
     fn description(&self) -> &str {
         "List recipes in the justfile categorized by agent permission. Returns two categories: \
-         'carte_blanche' (always-allowed, can be run freely) and 'bureaucratic' (per-request, \
-         require user confirmation). Recipes marked never-allowed are excluded entirely."
+         'always-allowed' (can be run freely) and 'per-request' (require user confirmation). \
+         Recipes marked never-allowed are excluded entirely."
     }
 
     fn input_schema(&self) -> Value {
@@ -31,6 +31,9 @@ impl Tool for ListRecipesTool {
                     "type": "string",
                     "description": "Path to a specific justfile"
                 }
+            },
+            "dependentRequired": {
+                "working_directory": ["justfile"]
             }
         })
     }
@@ -60,8 +63,8 @@ impl Tool for ListRecipesTool {
 
         let recipes = dump.get("recipes").cloned().unwrap_or(json!({}));
 
-        let mut carte_blanche = Vec::new();
-        let mut bureaucratic = Vec::new();
+        let mut always_allowed = Vec::new();
+        let mut per_request = Vec::new();
 
         if let Some(obj) = recipes.as_object() {
             for (name, recipe) in obj {
@@ -120,15 +123,15 @@ impl Tool for ListRecipesTool {
                 }
 
                 match agent_permission.as_str() {
-                    "always-allowed" => carte_blanche.push(entry),
-                    _ => bureaucratic.push(entry),
+                    "always-allowed" => always_allowed.push(entry),
+                    _ => per_request.push(entry),
                 }
             }
         }
 
         let output_json = serde_json::to_string_pretty(&json!({
-            "carte_blanche": carte_blanche,
-            "bureaucratic": bureaucratic,
+            "always-allowed": always_allowed,
+            "per-request": per_request,
         }))
         .unwrap_or_else(|_| "{}".to_string());
 

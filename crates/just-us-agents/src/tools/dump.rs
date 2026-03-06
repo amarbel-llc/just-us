@@ -29,6 +29,9 @@ impl Tool for DumpJustfileTool {
                     "type": "string",
                     "description": "Path to a specific justfile"
                 }
+            },
+            "dependentRequired": {
+                "working_directory": ["justfile"]
             }
         })
     }

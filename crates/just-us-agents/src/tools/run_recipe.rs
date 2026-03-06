@@ -48,7 +48,10 @@ impl Tool for RunRecipeTool {
                     "description": "Path to a specific justfile"
                 }
             },
-            "required": ["recipe"]
+            "required": ["recipe"],
+            "dependentRequired": {
+                "working_directory": ["justfile"]
+            }
         })
     }
 
