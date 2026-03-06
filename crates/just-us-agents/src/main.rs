@@ -4,7 +4,10 @@ mod tools;
 
 use clap::{Parser, Subcommand};
 use mcp_server::McpServer;
-use tools::{DumpJustfileTool, ListRecipesTool, ListVariablesTool, RunRecipeTool, ShowRecipeTool};
+use tools::{
+    DumpJustfileTool, ListRecipesTool, ListVariablesTool, RunRecipeRequestTool, RunRecipeTool,
+    ShowRecipeTool,
+};
 
 #[derive(Parser)]
 #[command(name = "just-us-agents")]
@@ -45,6 +48,9 @@ async fn run_mcp_server(just_binary: String) -> Result<(), Box<dyn std::error::E
             just_binary: just_binary.clone(),
         })
         .with_tool(RunRecipeTool {
+            just_binary: just_binary.clone(),
+        })
+        .with_tool(RunRecipeRequestTool {
             just_binary: just_binary.clone(),
         })
         .with_tool(ListVariablesTool {
