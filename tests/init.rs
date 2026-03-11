@@ -2,7 +2,10 @@ use {super::*, just::INIT_JUSTFILE};
 
 #[test]
 fn current_dir() {
-  let tmp = tempdir();
+  let tmp = tempfile::Builder::new()
+    .prefix("just-test-tempdir")
+    .tempdir_in("/tmp")
+    .unwrap();
 
   let output = Command::new(JUST)
     .current_dir(tmp.path())
@@ -20,7 +23,11 @@ fn current_dir() {
 
 #[test]
 fn exists() {
-  let output = Test::new()
+  let tempdir = tempfile::Builder::new()
+    .prefix("just-test-tempdir")
+    .tempdir_in("/tmp")
+    .unwrap();
+  let output = Test::with_tempdir(tempdir)
     .no_justfile()
     .arg("--init")
     .stderr_regex("Wrote justfile to `.*`\n")
@@ -35,7 +42,11 @@ fn exists() {
 
 #[test]
 fn write_error() {
-  let test = Test::new();
+  let tempdir = tempfile::Builder::new()
+    .prefix("just-test-tempdir")
+    .tempdir_in("/tmp")
+    .unwrap();
+  let test = Test::with_tempdir(tempdir);
 
   let justfile_path = test.justfile_path();
 
@@ -187,7 +198,11 @@ fn justfile_and_working_directory() {
 
 #[test]
 fn fmt_compatibility() {
-  let output = Test::new()
+  let tempdir = tempfile::Builder::new()
+    .prefix("just-test-tempdir")
+    .tempdir_in("/tmp")
+    .unwrap();
+  let output = Test::with_tempdir(tempdir)
     .no_justfile()
     .arg("--init")
     .stderr_regex("Wrote justfile to `.*`\n")
