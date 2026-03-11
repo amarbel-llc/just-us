@@ -296,7 +296,10 @@ impl<'src> Justfile<'src> {
 
     {
       let mut stdout = io::stdout().lock();
-      let mut writer = tap_dancer::TapWriter::new_color(&mut stdout, color)
+      let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+        .color(color)
+        .default_locale()
+        .build()
         .map_err(|io_error| Error::StdoutIo { io_error })?;
       writer
         .plan_ahead(plan_count)
@@ -505,7 +508,11 @@ impl<'src> Justfile<'src> {
       };
 
       let mut stdout = io::stdout().lock();
-      let mut writer = tap_dancer::TapWriter::bare(&mut stdout, tap.color);
+      let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+        .color(tap.color)
+        .default_locale()
+        .build_without_printing()
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
       writer
         .test_point(&test_result)
         .map_err(|io_error| Error::StdoutIo { io_error })?;

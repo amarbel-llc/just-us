@@ -9,6 +9,7 @@ fn single_passing_recipe() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
@@ -25,6 +26,7 @@ fn single_failing_recipe() {
         @exit 1
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
@@ -44,6 +46,7 @@ fn multiple_recipes_all_pass() {
         echo linting
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .args(["build", "lint"])
     .stdout_regex("TAP version 14\n1\\.\\.2\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 2 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
@@ -66,6 +69,7 @@ fn mixed_results_continues_past_failure() {
         echo linting
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .args(["build", "test", "lint"])
     .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nnot ok 2 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\nok 3 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
@@ -82,6 +86,7 @@ fn tap_captures_recipe_output() {
         echo captured-output
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    captured-output\n  \\.\\.\\.\n")
@@ -98,6 +103,7 @@ fn output_format_with_env_var() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .env("JUST_OUTPUT_FORMAT", "tap")
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
@@ -117,6 +123,7 @@ fn tap_expands_dependencies() {
         echo building
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.2\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
@@ -139,6 +146,7 @@ fn tap_expands_deep_dependencies() {
         echo testing
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
@@ -158,6 +166,7 @@ fn tap_failing_dependency() {
         echo building
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.2\nnot ok 1 - compile\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
@@ -174,6 +183,7 @@ fn tap_quiet_recipe_suppresses_yaml() {
         echo quiet-output
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("build")
     .stdout(
@@ -196,6 +206,7 @@ fn tap_no_output_no_yaml_block() {
         @true
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("build")
     .stdout(
@@ -224,6 +235,7 @@ fn tap_shared_dependency_runs_once() {
         echo testing
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .args(["build", "test"])
     .stdout_regex("TAP version 14\n1\\.\\.3\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
@@ -242,6 +254,7 @@ fn output_format_justfile_setting() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
     .stderr("")
@@ -278,6 +291,7 @@ fn tap_set_quiet_suppresses_yaml() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .arg("build")
     .stdout(
       "
@@ -299,6 +313,7 @@ fn tap_cli_quiet_suppresses_yaml() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--quiet"])
     .arg("build")
     .stdout(
@@ -321,6 +336,7 @@ fn tap_quiet_failing_suppresses_yaml() {
         exit 1
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("test")
     .stdout(
@@ -347,6 +363,7 @@ fn tap_no_quiet_overrides_set_quiet() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
     .stderr("")
@@ -362,6 +379,7 @@ fn tap_stream_comments_single_recipe() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--tap-stream", "comments"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
@@ -378,6 +396,7 @@ fn tap_stream_comments_failing() {
         @exit 1
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--tap-stream", "comments"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
@@ -394,6 +413,7 @@ fn tap_stream_comments_no_output_field() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--tap-stream", "comments"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n$")
@@ -410,6 +430,7 @@ fn tap_stream_stderr_single_recipe() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--tap-stream", "stderr"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
@@ -426,6 +447,7 @@ fn tap_stream_stderr_failing() {
         @exit 1
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--tap-stream", "stderr"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
@@ -441,6 +463,7 @@ fn tap_stream_buffered_explicit() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--tap-stream", "buffered"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
@@ -460,6 +483,7 @@ fn tap_stream_justfile_setting() {
         echo hello
       "#,
     )
+    .env("LC_ALL", "C")
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
     .stderr("")
@@ -478,6 +502,7 @@ fn tap_stream_cli_overrides_setting() {
         echo hello
       "#,
     )
+    .env("LC_ALL", "C")
     .args(["--tap-stream", "buffered"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n")
@@ -494,6 +519,7 @@ fn tap_stream_env_var() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .env("JUST_TAP_STREAM", "comments")
     .arg("build")
@@ -512,6 +538,7 @@ fn tap_stream_comments_multiline() {
         echo line2
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--tap-stream", "comments"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# line1\n# line2\nok 1 - build\n")
@@ -529,6 +556,7 @@ fn tap_recipe_comment_as_tap_comment() {
         echo building
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build # Build the project\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
@@ -546,6 +574,7 @@ fn tap_recipe_doc_attribute_as_tap_comment() {
         echo testing
       "#,
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - test # Run the test suite\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
@@ -562,6 +591,7 @@ fn tap_no_comment_without_doc() {
         echo building
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
@@ -583,6 +613,7 @@ fn tap_multiple_recipes_with_comments() {
         echo linting
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap"])
     .args(["compile", "lint"])
     .stdout_regex("TAP version 14\n1\\.\\.2\nok 1 - compile # Compile the source\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - lint # Run the linter\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
@@ -599,6 +630,7 @@ fn tap_stream_streamed_output_canonical_name() {
         echo hello
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--tap-stream", "streamed-output"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
@@ -615,6 +647,7 @@ fn tap_color_always_colorizes_ok() {
         @true
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--color", "always"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\n\x1b\\[32mok\x1b\\[0m 1 - build\n")
@@ -631,6 +664,7 @@ fn tap_color_always_colorizes_not_ok() {
         exit 1
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--color", "always"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.1\n\x1b\\[31mnot ok\x1b\\[0m 1 - test\n")
@@ -647,6 +681,7 @@ fn tap_color_never_no_ansi() {
         @true
       ",
     )
+    .env("LC_ALL", "C")
     .args(["--output-format", "tap", "--color", "never"])
     .arg("build")
     .stdout(
@@ -654,6 +689,100 @@ fn tap_color_never_no_ansi() {
       TAP version 14
       1..1
       ok 1 - build
+      ",
+    )
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_locale_emits_pragma_and_formats_plan() {
+  Test::new()
+    .justfile(
+      "
+      @build:
+        true
+      ",
+    )
+    .args(["--output-format", "tap", "--color", "never"])
+    .env("LC_ALL", "en_US.UTF-8")
+    .arg("build")
+    .stdout(
+      "
+      TAP version 14
+      pragma +locale-formatting:en-US
+      1..1
+      ok 1 - build
+      ",
+    )
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_locale_lc_all_posix_underscore() {
+  Test::new()
+    .justfile(
+      "
+      @build:
+        true
+      ",
+    )
+    .args(["--output-format", "tap", "--color", "never"])
+    .env("LC_ALL", "de_DE.UTF-8")
+    .arg("build")
+    .stdout(
+      "
+      TAP version 14
+      pragma +locale-formatting:de-DE
+      1..1
+      ok 1 - build
+      ",
+    )
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_color_always_yaml_output_preserves_sgr() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        printf '\\033[1mbold output\\033[0m\\n'
+      ",
+    )
+    .env("LC_ALL", "C")
+    .args(["--output-format", "tap", "--color", "always"])
+    .arg("build")
+    .stdout_regex(
+      "TAP version 14\n1\\.\\.1\n\x1b\\[32mok\x1b\\[0m 1 - build\n  ---\n  output: \\|\n    \x1b\\[1mbold output\x1b\\[0m\n  \\.\\.\\.\n",
+    )
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_color_never_yaml_output_strips_ansi() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        printf '\\033[1mbold output\\033[0m\\n'
+      ",
+    )
+    .env("LC_ALL", "C")
+    .args(["--output-format", "tap", "--color", "never"])
+    .arg("build")
+    .stdout(
+      "
+      TAP version 14
+      1..1
+      ok 1 - build
+        ---
+        output: |
+          bold output
+        ...
       ",
     )
     .stderr("")
