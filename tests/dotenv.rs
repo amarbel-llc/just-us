@@ -79,7 +79,11 @@ fn no_warning() {
 
 #[test]
 fn dotenv_required() {
-  Test::new()
+  let tempdir = tempfile::Builder::new()
+    .prefix("just-test-tempdir")
+    .tempdir_in("/tmp")
+    .unwrap();
+  Test::with_tempdir(tempdir)
     .justfile(
       "
         set dotenv-required
