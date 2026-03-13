@@ -878,7 +878,19 @@ impl Config {
       },
       shell_command: matches.get_flag(arg::SHELL_COMMAND),
       subcommand,
-      output_format: matches.get_one::<OutputFormat>(arg::OUTPUT_FORMAT).copied(),
+      output_format: matches
+        .get_one::<OutputFormat>(arg::OUTPUT_FORMAT)
+        .copied()
+        .or_else(|| {
+          std::env::args()
+            .next()
+            .and_then(|arg0| {
+              Path::new(&arg0)
+                .file_stem()
+                .is_some_and(|s| s == "just-me")
+                .then_some(OutputFormat::Tap)
+            })
+        }),
       tap_stream: matches.get_one::<TapStream>(arg::TAP_STREAM).copied(),
       tempdir: matches.get_one::<PathBuf>(arg::TEMPDIR).map(Into::into),
       timestamp: matches.get_flag(arg::TIMESTAMP),
