@@ -142,7 +142,6 @@ mod arg {
 impl Config {
   pub(crate) fn app() -> Command {
     Command::new(env!("CARGO_PKG_NAME"))
-      .bin_name(env!("CARGO_PKG_NAME"))
       .version(env!("CARGO_PKG_VERSION"))
       .author(env!("CARGO_PKG_AUTHORS"))
       .about(concat!(

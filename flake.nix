@@ -89,9 +89,7 @@
           "functions::path_functions2" # uses /usr/bin/env echo
         ];
 
-        skipArgs = builtins.concatStringsSep " " (
-          builtins.map (t: "--skip ${t}") skippedTests
-        );
+        skipArgs = builtins.concatStringsSep " " (builtins.map (t: "--skip ${t}") skippedTests);
 
         just = craneLib.buildPackage (
           commonArgs
@@ -133,6 +131,9 @@
               just
               just-us-agents
             ];
+            postBuild = ''
+              ln -s $out/bin/just $out/bin/just-me
+            '';
           };
           just = just;
           just-us-agents = just-us-agents;
