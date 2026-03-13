@@ -418,7 +418,7 @@ impl Config {
           .action(ArgAction::Set)
           .value_parser(clap::value_parser!(OutputFormat))
           .value_name("FORMAT")
-          .help("Set output format: 'default' for human-readable, 'tap' for TAP version 14"),
+          .help("Set output format (default, tap)"),
       )
       .arg(
         Arg::new(arg::TAP_STREAM)
@@ -427,7 +427,7 @@ impl Config {
           .action(ArgAction::Set)
           .value_parser(clap::value_parser!(TapStream))
           .value_name("MODE")
-          .help("Set TAP streaming mode: 'streamed-output' (default) emits output as comments, 'buffered' collects in YAML blocks, 'stderr' copies to stderr"),
+          .help("Set TAP output streaming mode (buffered, comments, stderr)"),
       )
       .arg(
         Arg::new(arg::TEMPDIR)
