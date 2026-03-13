@@ -301,14 +301,14 @@ impl<'src> Justfile<'src> {
         .default_locale()
         .build()
         .map_err(|io_error| Error::StdoutIo { io_error })?;
-      writer
-        .plan_ahead(plan_count)
-        .map_err(|io_error| Error::StdoutIo { io_error })?;
       if tap_stream == TapStream::StreamedOutput {
         writer
           .pragma("streamed-output", true)
           .map_err(|io_error| Error::StdoutIo { io_error })?;
       }
+      writer
+        .plan_ahead(plan_count)
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
     }
 
     let tap_tally = Mutex::new(TapTally::new(color));
