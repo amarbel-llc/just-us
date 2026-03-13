@@ -14,7 +14,7 @@ watch +args='test':
 
 [group: 'test']
 test: check-completion-scripts
-  tap-dancer cargo test --all
+  cargo test --all
 
 # verify checked-in completion scripts match generated output
 [group: 'test']
