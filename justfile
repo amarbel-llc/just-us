@@ -14,7 +14,7 @@ watch +args='test':
 
 [group: 'test']
 test:
-  cargo test --all
+  tap-dancer cargo test --all
 
 [group: 'check']
 ci: test clippy build-book forbid
