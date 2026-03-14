@@ -328,7 +328,6 @@ impl<'src> Node<'src> for Set<'src> {
       Setting::DotenvFilename(value)
       | Setting::DotenvPath(value)
       | Setting::OutputFormat(value)
-      | Setting::TapStream(value)
       | Setting::Tempdir(value)
       | Setting::WorkingDirectory(value) => {
         set.push_mut(value.tree());

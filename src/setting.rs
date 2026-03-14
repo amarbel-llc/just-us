@@ -18,7 +18,6 @@ pub(crate) enum Setting<'src> {
   Quiet(bool),
   ScriptInterpreter(Interpreter<Expression<'src>>),
   Shell(Interpreter<Expression<'src>>),
-  TapStream(Expression<'src>),
   Tempdir(Expression<'src>),
   Unstable(bool),
   WindowsPowerShell(bool),
@@ -32,7 +31,6 @@ impl<'src> Setting<'src> {
       Self::DotenvFilename(value)
       | Self::DotenvPath(value)
       | Self::OutputFormat(value)
-      | Self::TapStream(value)
       | Self::Tempdir(value)
       | Self::WorkingDirectory(value) => Some(value),
       Self::ScriptInterpreter(value) | Self::Shell(value) | Self::WindowsShell(value) => {
@@ -71,7 +69,6 @@ impl Display for Setting<'_> {
       Self::DotenvFilename(value)
       | Self::DotenvPath(value)
       | Self::OutputFormat(value)
-      | Self::TapStream(value)
       | Self::Tempdir(value)
       | Self::WorkingDirectory(value) => {
         write!(f, "{value}")

@@ -94,7 +94,6 @@ pub(crate) use {
     switch::Switch,
     table::Table,
     output_format::OutputFormat,
-    tap_stream::TapStream,
     thunk::Thunk,
     token::Token,
     token_kind::TokenKind,
@@ -284,7 +283,6 @@ mod suggestion;
 mod switch;
 mod table;
 mod output_format;
-mod tap_stream;
 mod thunk;
 mod token;
 mod token_kind;

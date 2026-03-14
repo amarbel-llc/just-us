@@ -355,7 +355,7 @@ impl<'src, D> Recipe<'src, D> {
     positional: &[String],
     is_dependency: bool,
     tap_output: Option<&Mutex<Vec<u8>>>,
-    tap_stream: TapStream,
+    output_format: OutputFormat,
   ) -> RunResult<'src, ()> {
     let color = context.config.color.stderr().banner();
     let prefix = color.prefix();
@@ -376,9 +376,9 @@ impl<'src, D> Recipe<'src, D> {
     let evaluator = Evaluator::new(context, BTreeMap::new(), is_dependency, scope);
 
     if self.is_script() {
-      self.run_script(context, scope, positional, evaluator, tap_output, tap_stream)
+      self.run_script(context, scope, positional, evaluator, tap_output, output_format)
     } else {
-      self.run_linewise(context, scope, positional, evaluator, tap_output, tap_stream)
+      self.run_linewise(context, scope, positional, evaluator, tap_output, output_format)
     }
   }
 
@@ -389,7 +389,7 @@ impl<'src, D> Recipe<'src, D> {
     positional: &[String],
     mut evaluator: Evaluator<'src, 'run>,
     tap_output: Option<&Mutex<Vec<u8>>>,
-    tap_stream: TapStream,
+    output_format: OutputFormat,
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
@@ -495,9 +495,9 @@ impl<'src, D> Recipe<'src, D> {
       );
 
       if tap_output.is_some() {
-        let (result, caught) = match tap_stream {
-          TapStream::Buffered => capture_command_output(cmd),
-          TapStream::StreamedOutput => {
+        let (result, caught) = match output_format {
+          OutputFormat::Tap => capture_command_output(cmd),
+          OutputFormat::TapStreamedOutput => {
             let stdout_lock = io::stdout();
             let line_buf = Mutex::new(Vec::<u8>::new());
             stream_command_output(cmd, &|chunk| {
@@ -515,13 +515,14 @@ impl<'src, D> Recipe<'src, D> {
               Ok(())
             })
           }
-          TapStream::Stderr => {
+          OutputFormat::TapStderr => {
             let stderr_lock = io::stderr();
             stream_command_output(cmd, &|chunk| {
               let mut stderr = stderr_lock.lock();
               stderr.write_all(chunk)
             })
           }
+          _ => unreachable!(),
         };
 
         match result {
@@ -608,7 +609,7 @@ impl<'src, D> Recipe<'src, D> {
     positional: &[String],
     mut evaluator: Evaluator<'src, 'run>,
     tap_output: Option<&Mutex<Vec<u8>>>,
-    tap_stream: TapStream,
+    output_format: OutputFormat,
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
@@ -728,9 +729,9 @@ impl<'src, D> Recipe<'src, D> {
     );
 
     if tap_output.is_some() {
-      let (result, caught) = match tap_stream {
-        TapStream::Buffered => capture_command_output(command),
-        TapStream::StreamedOutput => {
+      let (result, caught) = match output_format {
+        OutputFormat::Tap => capture_command_output(command),
+        OutputFormat::TapStreamedOutput => {
           let stdout_lock = io::stdout();
           let line_buf = Mutex::new(Vec::<u8>::new());
           stream_command_output(command, &|chunk| {
@@ -748,13 +749,14 @@ impl<'src, D> Recipe<'src, D> {
             Ok(())
           })
         }
-        TapStream::Stderr => {
+        OutputFormat::TapStderr => {
           let stderr_lock = io::stderr();
           stream_command_output(command, &|chunk| {
             let mut stderr = stderr_lock.lock();
             stderr.write_all(chunk)
           })
         }
+        _ => unreachable!(),
       };
 
       match result {

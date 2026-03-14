@@ -230,8 +230,8 @@ impl<'src> Justfile<'src> {
       .or(self.settings.output_format)
       .unwrap_or_default();
 
-    if output_format == OutputFormat::Tap {
-      return self.run_tap(config, &dotenv, &scopes, search, invocations);
+    if output_format.is_tap() {
+      return self.run_tap(config, &dotenv, &scopes, search, invocations, output_format);
     }
 
     let ran = Ran::default();
@@ -246,7 +246,7 @@ impl<'src> Justfile<'src> {
         &scopes,
         search,
         None,
-        TapStream::default(),
+        OutputFormat::Default,
       )?;
     }
 
@@ -280,6 +280,7 @@ impl<'src> Justfile<'src> {
     scopes: &BTreeMap<String, (&Self, &Scope<'src, '_>)>,
     search: &Search,
     invocations: Vec<Invocation<'src, '_>>,
+    output_format: OutputFormat,
   ) -> RunResult<'src> {
     let color = config.color.stdout().active();
 
@@ -289,11 +290,6 @@ impl<'src> Justfile<'src> {
       plan_count += Self::count_recipes(invocation.recipe, &mut seen, config.no_dependencies);
     }
 
-    let tap_stream = config
-      .tap_stream
-      .or(self.settings.tap_stream)
-      .unwrap_or_default();
-
     {
       let mut stdout = io::stdout().lock();
       let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
@@ -301,7 +297,7 @@ impl<'src> Justfile<'src> {
         .default_locale()
         .build()
         .map_err(|io_error| Error::StdoutIo { io_error })?;
-      if tap_stream == TapStream::StreamedOutput {
+      if output_format == OutputFormat::TapStreamedOutput {
         writer
           .pragma("streamed-output", true)
           .map_err(|io_error| Error::StdoutIo { io_error })?;
@@ -325,7 +321,7 @@ impl<'src> Justfile<'src> {
         scopes,
         search,
         Some(&tap_tally),
-        tap_stream,
+        output_format,
       );
     }
 
@@ -383,7 +379,7 @@ impl<'src> Justfile<'src> {
     scopes: &BTreeMap<String, (&Self, &Scope<'src, '_>)>,
     search: &Search,
     tap: Option<&Mutex<TapTally>>,
-    tap_stream: TapStream,
+    output_format: OutputFormat,
   ) -> RunResult<'src> {
     {
       let mutex = ran.mutex(recipe, arguments);
@@ -451,20 +447,20 @@ impl<'src> Justfile<'src> {
       scopes,
       search,
       tap,
-      tap_stream,
+      output_format,
     )?;
 
     let tap_output_buf = tap.as_ref().map(|_| Mutex::new(Vec::<u8>::new()));
 
     let run_result =
-      recipe.run(&context, &scope, &positional, is_dependency, tap_output_buf.as_ref(), tap_stream);
+      recipe.run(&context, &scope, &positional, is_dependency, tap_output_buf.as_ref(), output_format);
 
     if let Some(tap) = tap {
       let mut tap = tap.lock().unwrap();
       tap.counter += 1;
       let number = tap.counter;
 
-      let output = if tap_stream == TapStream::StreamedOutput {
+      let output = if output_format == OutputFormat::TapStreamedOutput {
         None
       } else {
         tap_output_buf
@@ -535,7 +531,7 @@ impl<'src> Justfile<'src> {
       scopes,
       search,
       tap,
-      tap_stream,
+      output_format,
     )?;
 
     Ok(())
@@ -552,7 +548,7 @@ impl<'src> Justfile<'src> {
     scopes: &BTreeMap<String, (&Self, &Scope<'src, 'run>)>,
     search: &Search,
     tap: Option<&Mutex<TapTally>>,
-    tap_stream: TapStream,
+    output_format: OutputFormat,
   ) -> RunResult<'src> {
     if context.config.no_dependencies {
       return Ok(());
@@ -577,7 +573,7 @@ impl<'src> Justfile<'src> {
         for (recipe, arguments) in evaluated {
           handles.push(thread_scope.spawn(move || {
             Self::run_recipe(
-              &arguments, config, dotenv, true, ran, recipe, scopes, search, tap, tap_stream,
+              &arguments, config, dotenv, true, ran, recipe, scopes, search, tap, output_format,
             )
           }));
         }
@@ -591,7 +587,7 @@ impl<'src> Justfile<'src> {
     } else {
       for (recipe, arguments) in evaluated {
         Self::run_recipe(
-          &arguments, config, dotenv, true, ran, recipe, scopes, search, tap, tap_stream,
+          &arguments, config, dotenv, true, ran, recipe, scopes, search, tap, output_format,
         )?;
       }
     }
