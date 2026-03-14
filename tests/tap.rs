@@ -651,8 +651,9 @@ fn tap_color_always_colorizes_ok() {
         @true
       ",
     )
+    .output_format(Some("tap"))
     .env("LC_ALL", "C")
-    .args(["--output-format", "tap", "--color", "always"])
+    .args(["--color", "always"])
     .arg("build")
     .stdout_regex("TAP version 14\n1\\.\\.1\n\x1b\\[32mok\x1b\\[0m 1 - build\n")
     .stderr("")
@@ -668,8 +669,9 @@ fn tap_color_always_colorizes_not_ok() {
         exit 1
       ",
     )
+    .output_format(Some("tap"))
     .env("LC_ALL", "C")
-    .args(["--output-format", "tap", "--color", "always"])
+    .args(["--color", "always"])
     .arg("test")
     .stdout_regex("TAP version 14\n1\\.\\.1\n\x1b\\[31mnot ok\x1b\\[0m 1 - test\n")
     .stderr("")
@@ -685,8 +687,9 @@ fn tap_color_never_no_ansi() {
         @true
       ",
     )
+    .output_format(Some("tap"))
     .env("LC_ALL", "C")
-    .args(["--output-format", "tap", "--color", "never"])
+    .args(["--color", "never"])
     .arg("build")
     .stdout(
       "
@@ -708,7 +711,8 @@ fn tap_locale_emits_pragma_and_formats_plan() {
         true
       ",
     )
-    .args(["--output-format", "tap", "--color", "never"])
+    .output_format(Some("tap"))
+    .args(["--color", "never"])
     .env("LC_ALL", "en_US.UTF-8")
     .arg("build")
     .stdout(
@@ -732,7 +736,8 @@ fn tap_locale_lc_all_posix_underscore() {
         true
       ",
     )
-    .args(["--output-format", "tap", "--color", "never"])
+    .output_format(Some("tap"))
+    .args(["--color", "never"])
     .env("LC_ALL", "de_DE.UTF-8")
     .arg("build")
     .stdout(
@@ -756,8 +761,9 @@ fn tap_color_always_yaml_output_preserves_sgr() {
         printf '\\033[1mbold output\\033[0m\\n'
       ",
     )
+    .output_format(Some("tap"))
     .env("LC_ALL", "C")
-    .args(["--output-format", "tap", "--color", "always"])
+    .args(["--color", "always"])
     .arg("build")
     .stdout_regex(
       "TAP version 14\n1\\.\\.1\n\x1b\\[32mok\x1b\\[0m 1 - build\n  ---\n  output: \\|\n    \x1b\\[1mbold output\x1b\\[0m\n  \\.\\.\\.\n",
@@ -775,8 +781,9 @@ fn tap_color_never_yaml_output_strips_ansi() {
         printf '\\033[1mbold output\\033[0m\\n'
       ",
     )
+    .output_format(Some("tap"))
     .env("LC_ALL", "C")
-    .args(["--output-format", "tap", "--color", "never"])
+    .args(["--color", "never"])
     .arg("build")
     .stdout(
       "
@@ -805,8 +812,9 @@ fn tap_stream_streamed_output_elides_empty_lines() {
       ",
     )
     .output_format(Some("tap+streamed_output"))
+    .env("LC_ALL", "C")
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# line1\n# line2\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# line1\n# line2\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -821,8 +829,9 @@ fn default_output_is_tap_streamed() {
       ",
     )
     .output_format(None)
+    .env("LC_ALL", "C")
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
