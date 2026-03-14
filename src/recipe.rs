@@ -498,17 +498,23 @@ impl<'src, D> Recipe<'src, D> {
         let (result, caught) = match output_format {
           OutputFormat::Tap => capture_command_output(cmd),
           OutputFormat::TapStreamedOutput => {
+            use std::io::IsTerminal;
             let stdout_lock = io::stdout();
+            let is_tty = stdout_lock.is_terminal();
             let line_buf = Mutex::new(Vec::<u8>::new());
             stream_command_output(cmd, &|chunk| {
               let mut buf = line_buf.lock().unwrap();
               buf.extend_from_slice(chunk);
               let mut stdout = stdout_lock.lock();
-              while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+              while let Some(pos) = buf.iter().position(|&b| b == b'\n' || b == b'\r') {
                 let line = String::from_utf8_lossy(&buf[..pos]);
-                let line = line.trim_end_matches('\r').trim_start();
+                let line = line.trim();
                 if !line.is_empty() {
-                  write!(stdout, "\r\x1b[2K# {line}")?;
+                  if is_tty {
+                    write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
+                  } else {
+                    write!(stdout, "\r\x1b[2K# {line}")?;
+                  }
                   stdout.flush()?;
                 }
                 buf.drain(..=pos);
@@ -733,17 +739,23 @@ impl<'src, D> Recipe<'src, D> {
       let (result, caught) = match output_format {
         OutputFormat::Tap => capture_command_output(command),
         OutputFormat::TapStreamedOutput => {
+          use std::io::IsTerminal;
           let stdout_lock = io::stdout();
+          let is_tty = stdout_lock.is_terminal();
           let line_buf = Mutex::new(Vec::<u8>::new());
           stream_command_output(command, &|chunk| {
             let mut buf = line_buf.lock().unwrap();
             buf.extend_from_slice(chunk);
             let mut stdout = stdout_lock.lock();
-            while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            while let Some(pos) = buf.iter().position(|&b| b == b'\n' || b == b'\r') {
               let line = String::from_utf8_lossy(&buf[..pos]);
-              let line = line.trim_end_matches('\r').trim_start();
+              let line = line.trim();
               if !line.is_empty() {
-                write!(stdout, "\r\x1b[2K# {line}")?;
+                if is_tty {
+                  write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
+                } else {
+                  write!(stdout, "\r\x1b[2K# {line}")?;
+                }
                 stdout.flush()?;
               }
               buf.drain(..=pos);
