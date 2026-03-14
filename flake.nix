@@ -139,7 +139,7 @@
           just-us-agents = just-us-agents;
         };
 
-        devShells.default = rust.devShells.${system}.default.overrideAttrs (old: {
+        devShell = rust.devShell.${system}.overrideAttrs (old: {
           nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
             pkgs.bashInteractive
           ];
