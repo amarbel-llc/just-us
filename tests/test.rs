@@ -16,6 +16,7 @@ pub(crate) struct Test {
   pub(crate) env: BTreeMap<String, String>,
   pub(crate) expected_files: BTreeMap<PathBuf, Vec<u8>>,
   pub(crate) justfile: Option<String>,
+  pub(crate) output_format: Option<String>,
   pub(crate) response: Option<Response>,
   pub(crate) shell: bool,
   pub(crate) stderr: String,
@@ -40,6 +41,7 @@ impl Test {
       env: BTreeMap::new(),
       expected_files: BTreeMap::new(),
       justfile: Some(String::new()),
+      output_format: Some("default".into()),
       response: None,
       shell: true,
       stderr: String::new(),
@@ -102,6 +104,11 @@ impl Test {
 
   pub(crate) fn no_justfile(mut self) -> Self {
     self.justfile = None;
+    self
+  }
+
+  pub(crate) fn output_format(mut self, format: Option<&str>) -> Self {
+    self.output_format = format.map(Into::into);
     self
   }
 
@@ -240,6 +247,10 @@ impl Test {
 
     if self.shell {
       command.args(["--shell", "bash"]);
+    }
+
+    if let Some(ref format) = self.output_format {
+      command.args(["--output-format", format]);
     }
 
     let mut child = command
