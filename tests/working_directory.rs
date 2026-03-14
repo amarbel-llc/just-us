@@ -27,6 +27,7 @@ fn justfile_without_working_directory() -> Result<(), Box<dyn Error>> {
   };
 
   let output = Command::new(JUST)
+    .args(["--output-format", "default"])
     .arg("--justfile")
     .arg(tmp.path().join("justfile"))
     .output()?;
@@ -54,6 +55,7 @@ fn justfile_without_working_directory_relative() -> Result<(), Box<dyn Error>> {
 
   let output = Command::new(JUST)
     .current_dir(tmp.path())
+    .args(["--output-format", "default"])
     .arg("--justfile")
     .arg("justfile")
     .output()?;
@@ -82,6 +84,7 @@ fn change_working_directory_to_search_justfile_parent() -> Result<(), Box<dyn Er
 
   let output = Command::new(JUST)
     .current_dir(tmp.path().join("subdir"))
+    .args(["--output-format", "default"])
     .output()?;
 
   if !output.status.success() {
@@ -108,6 +111,7 @@ fn justfile_and_working_directory() -> Result<(), Box<dyn Error>> {
   };
 
   let output = Command::new(JUST)
+    .args(["--output-format", "default"])
     .arg("--justfile")
     .arg(tmp.path().join("justfile"))
     .arg("--working-directory")
@@ -139,6 +143,7 @@ fn search_dir_child() -> Result<(), Box<dyn Error>> {
 
   let output = Command::new(JUST)
     .current_dir(tmp.path())
+    .args(["--output-format", "default"])
     .arg("child/")
     .output()?;
 
@@ -167,6 +172,7 @@ fn search_dir_parent() -> Result<(), Box<dyn Error>> {
 
   let output = Command::new(JUST)
     .current_dir(tmp.path().join("child"))
+    .args(["--output-format", "default"])
     .arg("../")
     .output()?;
 

@@ -240,6 +240,7 @@ fn default() {
   .unwrap();
 
   let output = Command::new(JUST)
+    .args(["--output-format", "default"])
     .arg("--choose")
     .arg("--chooser=fzf")
     .current_dir(tmp.path())

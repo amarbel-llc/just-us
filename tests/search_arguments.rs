@@ -19,11 +19,11 @@ fn passing_dot_as_argument_is_allowed() {
     )
     .write(
       "child/justfile",
-      "say ARG:\n '{{just_executable()}}' ../say {{ARG}}",
+      "set output-format := \"default\"\nsay ARG:\n '{{just_executable()}}' --output-format default ../say {{ARG}}",
     )
     .current_dir("child")
     .args(["say", "."])
     .stdout(".\n")
-    .stderr_regex("'.*' ../say .\necho .\n")
+    .stderr_regex("'.*' --output-format default ../say .\necho .\n")
     .success();
 }

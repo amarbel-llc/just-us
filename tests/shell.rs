@@ -28,6 +28,7 @@ fn flag() {
 
   let output = Command::new(JUST)
     .current_dir(tmp.path())
+    .args(["--output-format", "default"])
     .arg("--shell")
     .arg(shell)
     .output()

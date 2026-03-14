@@ -3,6 +3,7 @@ use super::*;
 fn search_test<P: AsRef<Path>>(path: P, args: &[&str]) {
   let output = Command::new(JUST)
     .current_dir(path)
+    .args(["--output-format", "default"])
     .args(args)
     .output()
     .expect("just invocation failed");

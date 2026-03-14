@@ -116,7 +116,10 @@ macro_rules! run_error {
   } => {
     #[test]
     fn $name() {
-      let config = $crate::testing::config(&$args);
+      let mut args: Vec<&str> = $args.to_vec();
+      args.insert(0, "--output-format");
+      args.insert(1, "default");
+      let config = $crate::testing::config(&args);
       let search = $crate::testing::search(&config);
 
       if let Subcommand::Run{ arguments } = &config.subcommand {

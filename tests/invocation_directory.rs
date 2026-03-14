@@ -50,6 +50,7 @@ fn test_invocation_directory() {
 
   let output = Command::new(JUST)
     .current_dir(&subdir)
+    .args(["--output-format", "default"])
     .args(["--shell", "sh"])
     .output()
     .expect("just invocation failed");
