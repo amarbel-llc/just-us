@@ -295,13 +295,9 @@ impl<'src> Justfile<'src> {
       let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
         .color(color)
         .default_locale()
+        .tty_build_last_line(output_format == OutputFormat::TapStreamedOutput)
         .build()
         .map_err(|io_error| Error::StdoutIo { io_error })?;
-      if output_format == OutputFormat::TapStreamedOutput {
-        writer
-          .pragma("streamed-output", true)
-          .map_err(|io_error| Error::StdoutIo { io_error })?;
-      }
       writer
         .plan_ahead(plan_count)
         .map_err(|io_error| Error::StdoutIo { io_error })?;
@@ -460,16 +456,12 @@ impl<'src> Justfile<'src> {
       tap.counter += 1;
       let number = tap.counter;
 
-      let output = if output_format == OutputFormat::TapStreamedOutput {
-        None
-      } else {
-        tap_output_buf
-          .map(|buf| {
-            let buf = buf.into_inner().unwrap();
-            String::from_utf8_lossy(&buf).into_owned()
-          })
-          .filter(|s| !s.is_empty())
-      };
+      let output = tap_output_buf
+        .map(|buf| {
+          let buf = buf.into_inner().unwrap();
+          String::from_utf8_lossy(&buf).into_owned()
+        })
+        .filter(|s| !s.is_empty());
 
       let quiet = recipe.quiet
         || (module.settings.quiet && !recipe.no_quiet())
@@ -486,7 +478,7 @@ impl<'src> Justfile<'src> {
           error_message: None,
           exit_code: None,
           output,
-          suppress_yaml: quiet,
+          suppress_yaml: quiet || output_format == OutputFormat::TapStreamedOutput,
         },
         Err(ref error) => {
           tap.failures += 1;
@@ -509,6 +501,11 @@ impl<'src> Justfile<'src> {
         .default_locale()
         .build_without_printing()
         .map_err(|io_error| Error::StdoutIo { io_error })?;
+      if output_format == OutputFormat::TapStreamedOutput {
+        writer
+          .finish_last_line()
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+      }
       writer
         .test_point(&test_result)
         .map_err(|io_error| Error::StdoutIo { io_error })?;

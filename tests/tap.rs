@@ -387,7 +387,7 @@ fn tap_stream_comments_single_recipe() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -404,7 +404,7 @@ fn tap_stream_comments_failing() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("test")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2Knot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -421,7 +421,7 @@ fn tap_stream_comments_no_output_field() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# hello\nok 1 - build\n$")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -490,7 +490,7 @@ fn tap_stream_justfile_setting() {
     .env("LC_ALL", "C")
     .output_format(None)
     .arg("build")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -527,7 +527,7 @@ fn tap_stream_env_var() {
     .env("JUST_OUTPUT_FORMAT", "tap+streamed_output")
     .output_format(None)
     .arg("build")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -545,7 +545,7 @@ fn tap_stream_comments_multiline() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# line1\n# line2\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# line1\r\x1b\\[2K# line2\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -637,7 +637,7 @@ fn tap_stream_streamed_output_canonical_name() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -814,7 +814,7 @@ fn tap_stream_streamed_output_elides_empty_lines() {
     .output_format(Some("tap+streamed_output"))
     .env("LC_ALL", "C")
     .arg("build")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# line1\n# line2\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# line1\r\x1b\\[2K# line2\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -831,7 +831,7 @@ fn default_output_is_tap_streamed() {
     .output_format(None)
     .env("LC_ALL", "C")
     .arg("build")
-    .stdout_regex("TAP version 14\npragma \\+streamed-output\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }

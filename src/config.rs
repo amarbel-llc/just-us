@@ -877,7 +877,7 @@ impl Config {
               Path::new(&arg0)
                 .file_stem()
                 .is_some_and(|s| s == "just-me")
-                .then_some(OutputFormat::Tap)
+                .then_some(OutputFormat::TapStreamedOutput)
             })
         }),
       tempdir: matches.get_one::<PathBuf>(arg::TEMPDIR).map(Into::into),
