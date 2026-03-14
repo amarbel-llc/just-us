@@ -507,7 +507,9 @@ impl<'src, D> Recipe<'src, D> {
               while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
                 let line = String::from_utf8_lossy(&buf[..pos]);
                 let line = line.rsplit('\r').next().unwrap_or(&line);
-                writeln!(stdout, "# {line}")?;
+                if !line.is_empty() {
+                  writeln!(stdout, "# {line}")?;
+                }
                 buf.drain(..=pos);
               }
               Ok(())
@@ -738,7 +740,9 @@ impl<'src, D> Recipe<'src, D> {
             while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
               let line = String::from_utf8_lossy(&buf[..pos]);
               let line = line.rsplit('\r').next().unwrap_or(&line);
-              writeln!(stdout, "# {line}")?;
+              if !line.is_empty() {
+                writeln!(stdout, "# {line}")?;
+              }
               buf.drain(..=pos);
             }
             Ok(())

@@ -788,3 +788,21 @@ fn tap_color_never_yaml_output_strips_ansi() {
     .stderr("")
     .success();
 }
+
+#[test]
+fn tap_stream_streamed_output_elides_empty_lines() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo line1
+        echo ''
+        echo line2
+      ",
+    )
+    .args(["--output-format", "tap", "--tap-stream", "streamed-output"])
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# line1\n# line2\nok 1 - build\n")
+    .stderr("")
+    .success();
+}
