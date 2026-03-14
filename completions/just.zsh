@@ -32,8 +32,7 @@ _just() {
 '*--set=[Override <VARIABLE> with <VALUE>]: :(_just_variables)' \
 '--shell=[Invoke <SHELL> to run recipes]: :_default' \
 '*--shell-arg=[Invoke shell with <SHELL-ARG> as an argument]: :_default' \
-'--output-format=[Set output format (default, tap)]:FORMAT:(default tap)' \
-'--tap-stream=[Set TAP output streaming mode (buffered, comments, stderr)]:MODE:(buffered streamed-output stderr)' \
+'--output-format=[Set output format (default, tap, tap+streamed_output, tap+stderr)]:FORMAT:_default' \
 '--tempdir=[Save temporary files to <TEMPDIR>.]: :_files' \
 '--timestamp-format=[Timestamp format string]: :_default' \
 '-d+[Use <WORKING-DIRECTORY> as working directory. --justfile must also be set]: :_files' \
