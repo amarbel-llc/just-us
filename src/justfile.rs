@@ -496,16 +496,15 @@ impl<'src> Justfile<'src> {
       };
 
       let mut stdout = io::stdout().lock();
+      if output_format == OutputFormat::TapStreamedOutput {
+        write!(stdout, "\r\x1b[2K").map_err(|io_error| Error::StdoutIo { io_error })?;
+        stdout.flush().map_err(|io_error| Error::StdoutIo { io_error })?;
+      }
       let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
         .color(tap.color)
         .default_locale()
         .build_without_printing()
         .map_err(|io_error| Error::StdoutIo { io_error })?;
-      if output_format == OutputFormat::TapStreamedOutput {
-        writer
-          .finish_last_line()
-          .map_err(|io_error| Error::StdoutIo { io_error })?;
-      }
       writer
         .test_point(&test_result)
         .map_err(|io_error| Error::StdoutIo { io_error })?;

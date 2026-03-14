@@ -500,13 +500,13 @@ impl<'src, D> Recipe<'src, D> {
           OutputFormat::TapStreamedOutput => {
             let stdout_lock = io::stdout();
             let line_buf = Mutex::new(Vec::<u8>::new());
-            let result = stream_command_output(cmd, &|chunk| {
+            stream_command_output(cmd, &|chunk| {
               let mut buf = line_buf.lock().unwrap();
               buf.extend_from_slice(chunk);
               let mut stdout = stdout_lock.lock();
               while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
                 let line = String::from_utf8_lossy(&buf[..pos]);
-                let line = line.rsplit('\r').next().unwrap_or(&line);
+                let line = line.trim_end_matches('\r').trim_start();
                 if !line.is_empty() {
                   write!(stdout, "\r\x1b[2K# {line}")?;
                   stdout.flush()?;
@@ -514,8 +514,7 @@ impl<'src, D> Recipe<'src, D> {
                 buf.drain(..=pos);
               }
               Ok(())
-            });
-            result
+            })
           }
           OutputFormat::TapStderr => {
             let stderr_lock = io::stderr();
@@ -736,13 +735,13 @@ impl<'src, D> Recipe<'src, D> {
         OutputFormat::TapStreamedOutput => {
           let stdout_lock = io::stdout();
           let line_buf = Mutex::new(Vec::<u8>::new());
-          let result = stream_command_output(command, &|chunk| {
+          stream_command_output(command, &|chunk| {
             let mut buf = line_buf.lock().unwrap();
             buf.extend_from_slice(chunk);
             let mut stdout = stdout_lock.lock();
             while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
               let line = String::from_utf8_lossy(&buf[..pos]);
-              let line = line.rsplit('\r').next().unwrap_or(&line);
+              let line = line.trim_end_matches('\r').trim_start();
               if !line.is_empty() {
                 write!(stdout, "\r\x1b[2K# {line}")?;
                 stdout.flush()?;
@@ -750,8 +749,7 @@ impl<'src, D> Recipe<'src, D> {
               buf.drain(..=pos);
             }
             Ok(())
-          });
-          result
+          })
         }
         OutputFormat::TapStderr => {
           let stderr_lock = io::stderr();
