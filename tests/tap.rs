@@ -810,3 +810,35 @@ fn tap_stream_streamed_output_elides_empty_lines() {
     .stderr("")
     .success();
 }
+
+#[test]
+fn default_output_is_tap_streamed() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .output_format(None)
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\npragma \\+streamed-output\n# hello\nok 1 - build\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn output_format_default_produces_plain_output() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo hello
+      ",
+    )
+    .output_format(Some("default"))
+    .arg("build")
+    .stdout("hello\n")
+    .stderr("echo hello\n")
+    .success();
+}
