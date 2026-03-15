@@ -459,7 +459,17 @@ impl<'src> Justfile<'src> {
       let output = tap_output_buf
         .map(|buf| {
           let buf = buf.into_inner().unwrap();
-          String::from_utf8_lossy(&buf).into_owned()
+          let raw = String::from_utf8_lossy(&buf);
+          if output_format == OutputFormat::TapStreamedOutput {
+            raw
+              .lines()
+              .map(|line| line.trim_end_matches('\r'))
+              .filter(|line| !line.trim().is_empty())
+              .collect::<Vec<_>>()
+              .join("\n")
+          } else {
+            raw.into_owned()
+          }
         })
         .filter(|s| !s.is_empty());
 
