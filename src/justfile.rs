@@ -478,7 +478,9 @@ impl<'src> Justfile<'src> {
           error_message: None,
           exit_code: None,
           output,
-          suppress_yaml: quiet || output_format == OutputFormat::TapStreamedOutput,
+          suppress_yaml: quiet
+            || (output_format == OutputFormat::TapStreamedOutput
+              && !config.verbosity.loquacious()),
         },
         Err(ref error) => {
           tap.failures += 1;
