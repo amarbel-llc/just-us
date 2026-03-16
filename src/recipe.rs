@@ -361,9 +361,7 @@ impl<'src, D> Recipe<'src, D> {
     let prefix = color.prefix();
     let suffix = color.suffix();
 
-    if context.config.verbosity.loquacious()
-      && tap_output.is_none()
-    {
+    if context.config.verbosity.loquacious() && tap_output.is_none() {
       eprintln!("{prefix}===> Running recipe `{}`...{suffix}", self.name);
     }
 
@@ -376,9 +374,23 @@ impl<'src, D> Recipe<'src, D> {
     let evaluator = Evaluator::new(context, BTreeMap::new(), is_dependency, scope);
 
     if self.is_script() {
-      self.run_script(context, scope, positional, evaluator, tap_output, output_format)
+      self.run_script(
+        context,
+        scope,
+        positional,
+        evaluator,
+        tap_output,
+        output_format,
+      )
     } else {
-      self.run_linewise(context, scope, positional, evaluator, tap_output, output_format)
+      self.run_linewise(
+        context,
+        scope,
+        positional,
+        evaluator,
+        tap_output,
+        output_format,
+      )
     }
   }
 
@@ -632,10 +644,7 @@ impl<'src, D> Recipe<'src, D> {
       evaluated_lines.push(evaluator.evaluate_line(line, false)?);
     }
 
-    if tap_output.is_none()
-      && config.verbosity.loud()
-      && (config.dry_run || self.quiet)
-    {
+    if tap_output.is_none() && config.verbosity.loud() && (config.dry_run || self.quiet) {
       for line in &evaluated_lines {
         eprintln!(
           "{}",

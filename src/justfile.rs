@@ -399,7 +399,9 @@ impl<'src> Justfile<'src> {
       let allowed = recipe
         .attributes
         .get(AttributeDiscriminant::Agents)
-        .is_some_and(|attr| matches!(attr, Attribute::Agents(lit) if lit.cooked == "always-allowed"));
+        .is_some_and(
+          |attr| matches!(attr, Attribute::Agents(lit) if lit.cooked == "always-allowed"),
+        );
 
       if !allowed {
         return Err(Error::AgentsNotAllowed {
@@ -448,8 +450,14 @@ impl<'src> Justfile<'src> {
 
     let tap_output_buf = tap.as_ref().map(|_| Mutex::new(Vec::<u8>::new()));
 
-    let run_result =
-      recipe.run(&context, &scope, &positional, is_dependency, tap_output_buf.as_ref(), output_format);
+    let run_result = recipe.run(
+      &context,
+      &scope,
+      &positional,
+      is_dependency,
+      tap_output_buf.as_ref(),
+      output_format,
+    );
 
     if let Some(tap) = tap {
       let mut tap = tap.lock().unwrap();
@@ -473,9 +481,8 @@ impl<'src> Justfile<'src> {
         })
         .filter(|s| !s.is_empty());
 
-      let quiet = recipe.quiet
-        || (module.settings.quiet && !recipe.no_quiet())
-        || config.verbosity.quiet();
+      let quiet =
+        recipe.quiet || (module.settings.quiet && !recipe.no_quiet()) || config.verbosity.quiet();
 
       let comment = recipe.doc().map(Into::into);
 
@@ -489,8 +496,7 @@ impl<'src> Justfile<'src> {
           exit_code: None,
           output,
           suppress_yaml: quiet
-            || (output_format == OutputFormat::TapStreamedOutput
-              && !config.verbosity.loquacious()),
+            || (output_format == OutputFormat::TapStreamedOutput && !config.verbosity.loquacious()),
         },
         Err(ref error) => {
           tap.failures += 1;
@@ -508,6 +514,12 @@ impl<'src> Justfile<'src> {
       };
 
       let mut stdout = io::stdout().lock();
+      if output_format == OutputFormat::TapStreamedOutput {
+        write!(stdout, "\r\x1b[2K").map_err(|io_error| Error::StdoutIo { io_error })?;
+        stdout
+          .flush()
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+      }
       let mut writer = rust_crap::CrapWriterBuilder::new(&mut stdout)
         .color(tap.color)
         .default_locale()
@@ -577,7 +589,16 @@ impl<'src> Justfile<'src> {
         for (recipe, arguments) in evaluated {
           handles.push(thread_scope.spawn(move || {
             Self::run_recipe(
-              &arguments, config, dotenv, true, ran, recipe, scopes, search, tap, output_format,
+              &arguments,
+              config,
+              dotenv,
+              true,
+              ran,
+              recipe,
+              scopes,
+              search,
+              tap,
+              output_format,
             )
           }));
         }
@@ -591,7 +612,16 @@ impl<'src> Justfile<'src> {
     } else {
       for (recipe, arguments) in evaluated {
         Self::run_recipe(
-          &arguments, config, dotenv, true, ran, recipe, scopes, search, tap, output_format,
+          &arguments,
+          config,
+          dotenv,
+          true,
+          ran,
+          recipe,
+          scopes,
+          search,
+          tap,
+          output_format,
         )?;
       }
     }
