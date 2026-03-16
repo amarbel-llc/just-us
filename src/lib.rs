@@ -60,6 +60,7 @@ pub(crate) use {
     namepath::Namepath,
     ordinal::Ordinal,
     output_error::OutputError,
+    output_format::OutputFormat,
     parameter::Parameter,
     parameter_kind::ParameterKind,
     parser::Parser,
@@ -93,7 +94,6 @@ pub(crate) use {
     suggestion::Suggestion,
     switch::Switch,
     table::Table,
-    output_format::OutputFormat,
     thunk::Thunk,
     token::Token,
     token_kind::TokenKind,
@@ -246,6 +246,7 @@ mod name;
 mod namepath;
 mod ordinal;
 mod output_error;
+mod output_format;
 mod parameter;
 mod parameter_kind;
 mod parser;
@@ -282,7 +283,6 @@ mod subcommand;
 mod suggestion;
 mod switch;
 mod table;
-mod output_format;
 mod thunk;
 mod token;
 mod token_kind;

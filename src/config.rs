@@ -414,7 +414,10 @@ impl Config {
           .long("output-format")
           .env("JUST_OUTPUT_FORMAT")
           .action(ArgAction::Set)
-          .value_parser(clap::builder::NonEmptyStringValueParser::new().map(|s: String| s.parse::<OutputFormat>().unwrap()))
+          .value_parser(
+            clap::builder::NonEmptyStringValueParser::new()
+              .map(|s: String| s.parse::<OutputFormat>().unwrap()),
+          )
           .value_name("FORMAT")
           .help("Set output format (default, tap, tap+streamed_output, tap+stderr)"),
       )
@@ -871,14 +874,12 @@ impl Config {
         .get_one::<OutputFormat>(arg::OUTPUT_FORMAT)
         .copied()
         .or_else(|| {
-          std::env::args()
-            .next()
-            .and_then(|arg0| {
-              Path::new(&arg0)
-                .file_stem()
-                .is_some_and(|s| s == "just-me")
-                .then_some(OutputFormat::TapStreamedOutput)
-            })
+          std::env::args().next().and_then(|arg0| {
+            Path::new(&arg0)
+              .file_stem()
+              .is_some_and(|s| s == "just-me")
+              .then_some(OutputFormat::TapStreamedOutput)
+          })
         }),
       tempdir: matches.get_one::<PathBuf>(arg::TEMPDIR).map(Into::into),
       timestamp: matches.get_flag(arg::TIMESTAMP),

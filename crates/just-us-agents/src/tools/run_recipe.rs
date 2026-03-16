@@ -4,164 +4,161 @@ use mcp_server::{Context, Tool, ToolError, ToolResult};
 use serde_json::{json, Value};
 
 pub(crate) fn recipe_input_schema() -> Value {
-    json!({
-        "type": "object",
-        "properties": {
-            "recipe": {
-                "type": "string",
-                "description": "Name of the recipe to run"
-            },
-            "arguments": {
-                "type": "array",
-                "items": { "type": "string" },
-                "description": "Positional arguments to pass to the recipe"
-            },
-            "overrides": {
-                "type": "object",
-                "additionalProperties": { "type": "string" },
-                "description": "Variable overrides as key=value pairs"
-            },
-            "dry_run": {
-                "type": "boolean",
-                "description": "If true, show what would be executed without running it"
-            },
-            "working_directory": {
-                "type": "string",
-                "description": "Working directory to search for the justfile"
-            },
-            "justfile": {
-                "type": "string",
-                "description": "Path to a specific justfile"
-            }
-        },
-        "required": ["recipe"],
-        "dependentRequired": {
-            "working_directory": ["justfile"]
-        }
-    })
+  json!({
+      "type": "object",
+      "properties": {
+          "recipe": {
+              "type": "string",
+              "description": "Name of the recipe to run"
+          },
+          "arguments": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Positional arguments to pass to the recipe"
+          },
+          "overrides": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Variable overrides as key=value pairs"
+          },
+          "dry_run": {
+              "type": "boolean",
+              "description": "If true, show what would be executed without running it"
+          },
+          "working_directory": {
+              "type": "string",
+              "description": "Working directory to search for the justfile"
+          },
+          "justfile": {
+              "type": "string",
+              "description": "Path to a specific justfile"
+          }
+      },
+      "required": ["recipe"],
+      "dependentRequired": {
+          "working_directory": ["justfile"]
+      }
+  })
 }
 
 pub(crate) async fn execute_recipe(
-    just_binary: &str,
-    arguments: &Value,
+  just_binary: &str,
+  arguments: &Value,
 ) -> Result<ToolResult, ToolError> {
-    let recipe = arguments
-        .get("recipe")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ToolError::InvalidArguments("recipe is required".into()))?;
+  let recipe = arguments
+    .get("recipe")
+    .and_then(|v| v.as_str())
+    .ok_or_else(|| ToolError::InvalidArguments("recipe is required".into()))?;
 
-    let working_dir = arguments.get("working_directory").and_then(|v| v.as_str());
-    let justfile = arguments.get("justfile").and_then(|v| v.as_str());
+  let working_dir = arguments.get("working_directory").and_then(|v| v.as_str());
+  let justfile = arguments.get("justfile").and_then(|v| v.as_str());
 
-    let dry_run = arguments
-        .get("dry_run")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+  let dry_run = arguments
+    .get("dry_run")
+    .and_then(|v| v.as_bool())
+    .unwrap_or(false);
 
-    let recipe_args: Vec<String> = arguments
-        .get("arguments")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+  let recipe_args: Vec<String> = arguments
+    .get("arguments")
+    .and_then(|v| v.as_array())
+    .map(|arr| {
+      arr
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect()
+    })
+    .unwrap_or_default();
 
-    let overrides: Vec<String> = arguments
-        .get("overrides")
-        .and_then(|v| v.as_object())
-        .map(|obj| {
-            obj.iter()
-                .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or_default()))
-                .collect()
-        })
-        .unwrap_or_default();
+  let overrides: Vec<String> = arguments
+    .get("overrides")
+    .and_then(|v| v.as_object())
+    .map(|obj| {
+      obj
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or_default()))
+        .collect()
+    })
+    .unwrap_or_default();
 
-    let mut args: Vec<&str> = Vec::new();
+  let mut args: Vec<&str> = Vec::new();
 
-    if dry_run {
-        args.push("--dry-run");
-    }
+  if dry_run {
+    args.push("--dry-run");
+  }
 
-    let override_refs: Vec<&str> = overrides.iter().map(|s| s.as_str()).collect();
-    args.extend(&override_refs);
+  let override_refs: Vec<&str> = overrides.iter().map(|s| s.as_str()).collect();
+  args.extend(&override_refs);
 
-    args.push(recipe);
+  args.push(recipe);
 
-    let arg_refs: Vec<&str> = recipe_args.iter().map(|s| s.as_str()).collect();
-    args.extend(&arg_refs);
+  let arg_refs: Vec<&str> = recipe_args.iter().map(|s| s.as_str()).collect();
+  args.extend(&arg_refs);
 
-    let output = run_just(just_binary, &args, working_dir, justfile)
-        .await
-        .map_err(|e| ToolError::ExecutionFailed(e))?;
+  let output = run_just(just_binary, &args, working_dir, justfile)
+    .await
+    .map_err(|e| ToolError::ExecutionFailed(e))?;
 
-    let result = json!({
-        "stdout": output.stdout,
-        "stderr": output.stderr,
-        "success": output.success,
-    });
+  let result = json!({
+      "stdout": output.stdout,
+      "stderr": output.stderr,
+      "success": output.success,
+  });
 
-    let result_text = serde_json::to_string_pretty(&result)
-        .unwrap_or_else(|_| format!("stdout: {}\nstderr: {}", output.stdout, output.stderr));
+  let result_text = serde_json::to_string_pretty(&result)
+    .unwrap_or_else(|_| format!("stdout: {}\nstderr: {}", output.stdout, output.stderr));
 
-    if output.success {
-        Ok(ToolResult::text(result_text))
-    } else {
-        Ok(ToolResult::error(result_text))
-    }
+  if output.success {
+    Ok(ToolResult::text(result_text))
+  } else {
+    Ok(ToolResult::error(result_text))
+  }
 }
 
 pub struct RunRecipeTool {
-    pub just_binary: String,
+  pub just_binary: String,
 }
 
 #[async_trait]
 impl Tool for RunRecipeTool {
-    fn name(&self) -> &str {
-        "run_recipe"
-    }
+  fn name(&self) -> &str {
+    "run_recipe"
+  }
 
-    fn description(&self) -> &str {
-        "Execute an always-allowed recipe from the justfile with optional arguments, variable overrides, and dry-run mode"
-    }
+  fn description(&self) -> &str {
+    "Execute an always-allowed recipe from the justfile with optional arguments, variable overrides, and dry-run mode"
+  }
 
-    fn input_schema(&self) -> Value {
-        recipe_input_schema()
-    }
+  fn input_schema(&self) -> Value {
+    recipe_input_schema()
+  }
 
-    async fn execute(&self, arguments: Value, _ctx: &Context) -> Result<ToolResult, ToolError> {
-        let recipe = arguments
-            .get("recipe")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| ToolError::InvalidArguments("recipe is required".into()))?;
+  async fn execute(&self, arguments: Value, _ctx: &Context) -> Result<ToolResult, ToolError> {
+    let recipe = arguments
+      .get("recipe")
+      .and_then(|v| v.as_str())
+      .ok_or_else(|| ToolError::InvalidArguments("recipe is required".into()))?;
 
-        let working_dir = arguments.get("working_directory").and_then(|v| v.as_str());
-        let justfile = arguments.get("justfile").and_then(|v| v.as_str());
+    let working_dir = arguments.get("working_directory").and_then(|v| v.as_str());
+    let justfile = arguments.get("justfile").and_then(|v| v.as_str());
 
-        let permission = crate::helpers::get_agent_permission(
-            &self.just_binary,
-            recipe,
-            working_dir,
-            justfile,
-        )
-        .await;
+    let permission =
+      crate::helpers::get_agent_permission(&self.just_binary, recipe, working_dir, justfile).await;
 
-        match permission.as_str() {
-            "never-allowed" => {
-                return Ok(ToolResult::error(format!(
+    match permission.as_str() {
+      "never-allowed" => {
+        return Ok(ToolResult::error(format!(
                     "Recipe `{recipe}` has attribute `[agents(\"never-allowed\")]` and cannot be run by agents"
                 )));
-            }
-            "per-request" => {
-                return Ok(ToolResult::error(format!(
-                    "Recipe `{recipe}` requires user confirmation (agents attribute is `per-request`). \
+      }
+      "per-request" => {
+        return Ok(ToolResult::error(format!(
+          "Recipe `{recipe}` requires user confirmation (agents attribute is `per-request`). \
                      Use `run_recipe_request` to execute per-request recipes."
-                )));
-            }
-            _ => {}
-        }
-
-        execute_recipe(&self.just_binary, &arguments).await
+        )));
+      }
+      _ => {}
     }
+
+    execute_recipe(&self.just_binary, &arguments).await
+  }
 }
