@@ -1,27 +1,5 @@
 use super::*;
 
-/// Check whether a string has any visible content after stripping ANSI escape
-/// sequences. Returns false for strings that are only whitespace and/or
-/// control sequences (e.g. `\x1b[0m\x1b[K`).
-fn has_visible_content(s: &str) -> bool {
-  let mut chars = s.chars();
-  while let Some(c) = chars.next() {
-    if c == '\x1b' {
-      // Skip CSI sequence: ESC [ <params 0x30-0x3F>* <intermediate 0x20-0x2F>* <final 0x40-0x7E>
-      if chars.next() == Some('[') {
-        for c in chars.by_ref() {
-          if ('@'..='~').contains(&c) {
-            break;
-          }
-        }
-      }
-    } else if !c.is_whitespace() && !c.is_ascii_control() {
-      return true;
-    }
-  }
-  false
-}
-
 /// Capture command output, using a PTY when stdout is a terminal so that
 /// child processes produce colored output.
 #[cfg(unix)]
@@ -523,23 +501,17 @@ impl<'src, D> Recipe<'src, D> {
             use std::io::IsTerminal;
             let stdout_lock = io::stdout();
             let is_tty = stdout_lock.is_terminal();
-            let line_buf = Mutex::new(Vec::<u8>::new());
+            let proc = Mutex::new(rust_crap::StatusLineProcessor::new());
             stream_command_output(cmd, &|chunk| {
-              let mut buf = line_buf.lock().unwrap();
-              buf.extend_from_slice(chunk);
+              let mut proc = proc.lock().unwrap();
               let mut stdout = stdout_lock.lock();
-              while let Some(pos) = buf.iter().position(|&b| b == b'\n' || b == b'\r') {
-                let line = String::from_utf8_lossy(&buf[..pos]);
-                let line = line.trim();
-                if has_visible_content(line) {
-                  if is_tty {
-                    write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
-                  } else {
-                    write!(stdout, "\r\x1b[2K# {line}")?;
-                  }
-                  stdout.flush()?;
+              for line in proc.feed(chunk) {
+                if is_tty {
+                  write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
+                } else {
+                  write!(stdout, "\r\x1b[2K# {line}")?;
                 }
-                buf.drain(..=pos);
+                stdout.flush()?;
               }
               Ok(())
             })
@@ -764,23 +736,17 @@ impl<'src, D> Recipe<'src, D> {
           use std::io::IsTerminal;
           let stdout_lock = io::stdout();
           let is_tty = stdout_lock.is_terminal();
-          let line_buf = Mutex::new(Vec::<u8>::new());
+          let proc = Mutex::new(rust_crap::StatusLineProcessor::new());
           stream_command_output(command, &|chunk| {
-            let mut buf = line_buf.lock().unwrap();
-            buf.extend_from_slice(chunk);
+            let mut proc = proc.lock().unwrap();
             let mut stdout = stdout_lock.lock();
-            while let Some(pos) = buf.iter().position(|&b| b == b'\n' || b == b'\r') {
-              let line = String::from_utf8_lossy(&buf[..pos]);
-              let line = line.trim();
-              if !line.is_empty() {
-                if is_tty {
-                  write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
-                } else {
-                  write!(stdout, "\r\x1b[2K# {line}")?;
-                }
-                stdout.flush()?;
+            for line in proc.feed(chunk) {
+              if is_tty {
+                write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
+              } else {
+                write!(stdout, "\r\x1b[2K# {line}")?;
               }
-              buf.drain(..=pos);
+              stdout.flush()?;
             }
             Ok(())
           })
