@@ -292,10 +292,10 @@ impl<'src> Justfile<'src> {
 
     {
       let mut stdout = io::stdout().lock();
-      let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+      let mut writer = rust_crap::CrapWriterBuilder::new(&mut stdout)
         .color(color)
         .default_locale()
-        .tty_build_last_line(output_format == OutputFormat::TapStreamedOutput)
+        .status_line(output_format == OutputFormat::TapStreamedOutput)
         .build()
         .map_err(|io_error| Error::StdoutIo { io_error })?;
       writer
@@ -480,7 +480,7 @@ impl<'src> Justfile<'src> {
       let comment = recipe.doc().map(Into::into);
 
       let test_result = match run_result {
-        Ok(()) => tap_dancer::TestResult {
+        Ok(()) => rust_crap::TestResult {
           number,
           name: recipe.name().into(),
           ok: true,
@@ -494,7 +494,7 @@ impl<'src> Justfile<'src> {
         },
         Err(ref error) => {
           tap.failures += 1;
-          tap_dancer::TestResult {
+          rust_crap::TestResult {
             number,
             name: recipe.name().into(),
             ok: false,
@@ -508,11 +508,7 @@ impl<'src> Justfile<'src> {
       };
 
       let mut stdout = io::stdout().lock();
-      if output_format == OutputFormat::TapStreamedOutput {
-        write!(stdout, "\r\x1b[2K").map_err(|io_error| Error::StdoutIo { io_error })?;
-        stdout.flush().map_err(|io_error| Error::StdoutIo { io_error })?;
-      }
-      let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+      let mut writer = rust_crap::CrapWriterBuilder::new(&mut stdout)
         .color(tap.color)
         .default_locale()
         .build_without_printing()
