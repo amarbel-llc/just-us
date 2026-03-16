@@ -17,7 +17,7 @@ fn capture_command_output(mut cmd: Command) -> (io::Result<process::Output>, Opt
         cmd.stderr(Stdio::from(pty.slave));
 
         let master = pty.master;
-        SignalHandler::spawn(cmd, move |mut child| {
+        SignalHandler::spawn_forward_all(cmd, move |mut child| {
           let mut output = Vec::new();
           let mut master_file = fs::File::from(master);
           loop {
@@ -42,7 +42,7 @@ fn capture_command_output(mut cmd: Command) -> (io::Result<process::Output>, Opt
   } else {
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
-    cmd.output_guard()
+    cmd.output_guard_forward_all()
   }
 }
 
@@ -50,7 +50,7 @@ fn capture_command_output(mut cmd: Command) -> (io::Result<process::Output>, Opt
 fn capture_command_output(mut cmd: Command) -> (io::Result<process::Output>, Option<Signal>) {
   cmd.stdout(Stdio::piped());
   cmd.stderr(Stdio::piped());
-  cmd.output_guard()
+  cmd.output_guard_forward_all()
 }
 
 /// Capture command output while streaming each chunk to a callback in real-time.
@@ -75,7 +75,7 @@ fn stream_command_output(
         let master = pty.master;
         let mut master_file = fs::File::from(master);
 
-        SignalHandler::spawn(cmd, move |mut child| {
+        SignalHandler::spawn_forward_all(cmd, move |mut child| {
           let mut output = Vec::new();
           loop {
             let mut buf = [0u8; 4096];
@@ -122,7 +122,7 @@ fn stream_command_output_piped(
   cmd.stdout(Stdio::piped());
   cmd.stderr(Stdio::piped());
 
-  SignalHandler::spawn(cmd, |mut child| {
+  SignalHandler::spawn_forward_all(cmd, |mut child| {
     let mut output = Vec::new();
     if let Some(mut stdout) = child.stdout.take() {
       let mut buf = [0u8; 4096];

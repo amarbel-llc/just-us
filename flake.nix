@@ -17,6 +17,7 @@
       inputs.utils.follows = "utils";
     };
     purse-first.url = "github:amarbel-llc/purse-first";
+    bob.url = "github:amarbel-llc/bob";
   };
 
   outputs =
@@ -29,6 +30,7 @@
       crane,
       rust,
       purse-first,
+      bob,
     }:
     utils.lib.eachDefaultSystem (
       system:
@@ -147,6 +149,7 @@
         devShells.default = rust.devShells.${system}.default.overrideAttrs (old: {
           nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
             pkgs.bashInteractive
+            bob.packages.${system}.batman
           ];
         });
       }

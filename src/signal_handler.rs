@@ -2,7 +2,7 @@ use super::*;
 
 pub(crate) struct SignalHandler {
   caught: Option<Signal>,
-  children: BTreeMap<i32, Command>,
+  children: BTreeMap<i32, (Command, bool)>,
   initialized: bool,
   verbosity: Verbosity,
 }
@@ -55,11 +55,43 @@ impl SignalHandler {
     }
 
     match signal {
-      // SIGHUP, SIGINT, and SIGQUIT are normally sent on terminal close,
-      // ctrl-c, and ctrl-\, respectively, and are sent to all processes in the
-      // foreground process group. this includes child processes, so we ignore
-      // the signal and wait for them to exit
-      Signal::Hangup | Signal::Interrupt | Signal::Quit => {}
+      // SIGHUP, SIGINT, and SIGQUIT are normally sent to all processes
+      // in the foreground process group by the terminal. Children with
+      // PTY stdio may not be in the same process group, so forward
+      // these signals to children that opted in via `forward_all`.
+      // For children sharing the process group, we do nothing and let
+      // the kernel deliver the signal directly.
+      Signal::Hangup | Signal::Interrupt | Signal::Quit =>
+      {
+        #[cfg(not(windows))]
+        for (&child, &(_, forward_all)) in &self.children {
+          if forward_all {
+            if self.verbosity.loquacious() {
+              eprintln!("just: sending {signal} to child process {child}");
+            }
+            nix::sys::signal::kill(
+              nix::unistd::Pid::from_raw(child),
+              Some(signal.into()),
+            )
+            .ok();
+          }
+        }
+      }
+      // SIGTERM is not sent by the terminal, so always forward it
+      Signal::Terminate =>
+      {
+        #[cfg(not(windows))]
+        for (&child, _) in &self.children {
+          if self.verbosity.loquacious() {
+            eprintln!("just: sending {signal} to child process {child}");
+          }
+          nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(child),
+            Some(signal.into()),
+          )
+          .ok();
+        }
+      }
       #[cfg(any(
         target_os = "dragonfly",
         target_os = "freebsd",
@@ -80,7 +112,7 @@ impl SignalHandler {
             if n == 1 { "process" } else { "processes" }
           );
 
-          for (&child, command) in &self.children {
+          for (&child, (command, _)) in &self.children {
             use std::fmt::Write;
             writeln!(message, "{child}: {command:?}").unwrap();
           }
@@ -88,27 +120,26 @@ impl SignalHandler {
           eprint!("{message}");
         }
       }
-      // SIGTERM is the default signal sent by kill. forward it to child
-      // processes and wait for them to exit
-      Signal::Terminate =>
-      {
-        #[cfg(not(windows))]
-        for &child in self.children.keys() {
-          if self.verbosity.loquacious() {
-            eprintln!("just: sending SIGTERM to child process {child}");
-          }
-          nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(child),
-            Some(Signal::Terminate.into()),
-          )
-          .ok();
-        }
-      }
     }
   }
 
   pub(crate) fn spawn<T>(
+    command: Command,
+    f: impl FnOnce(process::Child) -> io::Result<T>,
+  ) -> (io::Result<T>, Option<Signal>) {
+    Self::spawn_inner(command, false, f)
+  }
+
+  pub(crate) fn spawn_forward_all<T>(
+    command: Command,
+    f: impl FnOnce(process::Child) -> io::Result<T>,
+  ) -> (io::Result<T>, Option<Signal>) {
+    Self::spawn_inner(command, true, f)
+  }
+
+  fn spawn_inner<T>(
     mut command: Command,
+    forward_all: bool,
     f: impl FnOnce(process::Child) -> io::Result<T>,
   ) -> (io::Result<T>, Option<Signal>) {
     let mut instance = Self::instance();
@@ -133,7 +164,7 @@ impl SignalHandler {
     command.stdout(Stdio::null());
     command.stderr(Stdio::null());
 
-    instance.children.insert(pid, command);
+    instance.children.insert(pid, (command, forward_all));
 
     drop(instance);
 

@@ -18,6 +18,11 @@ watch +args='test':
 test: check-completion-scripts
   cargo test --all
 
+[group: 'test']
+test-bats: build
+  ln -sf just target/debug/just-me
+  just zz-tests_bats/test --bin-dir target/debug
+
 # verify checked-in completion scripts match generated output
 [group: 'test']
 check-completion-scripts:
