@@ -514,7 +514,10 @@ impl<'src> Justfile<'src> {
       };
 
       let mut stdout = io::stdout().lock();
-      if output_format == OutputFormat::TapStreamedOutput {
+      if output_format == OutputFormat::TapStreamedOutput && {
+        use std::io::IsTerminal;
+        io::stdout().is_terminal()
+      } {
         write!(stdout, "\r\x1b[2K").map_err(|io_error| Error::StdoutIo { io_error })?;
         stdout
           .flush()

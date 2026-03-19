@@ -511,22 +511,21 @@ impl<'src, D> Recipe<'src, D> {
           OutputFormat::Tap => capture_command_output(cmd),
           OutputFormat::TapStreamedOutput => {
             use std::io::IsTerminal;
-            let stdout_lock = io::stdout();
-            let is_tty = stdout_lock.is_terminal();
-            let proc = Mutex::new(rust_crap::StatusLineProcessor::new());
-            stream_command_output(cmd, &|chunk| {
-              let mut proc = proc.lock().unwrap();
-              let mut stdout = stdout_lock.lock();
-              for line in proc.feed(chunk) {
-                if is_tty {
+            if io::stdout().is_terminal() {
+              let stdout_lock = io::stdout();
+              let proc = Mutex::new(rust_crap::StatusLineProcessor::new());
+              stream_command_output(cmd, &|chunk| {
+                let mut proc = proc.lock().unwrap();
+                let mut stdout = stdout_lock.lock();
+                for line in proc.feed(chunk) {
                   write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
-                } else {
-                  write!(stdout, "\r\x1b[2K# {line}")?;
+                  stdout.flush()?;
                 }
-                stdout.flush()?;
-              }
-              Ok(())
-            })
+                Ok(())
+              })
+            } else {
+              capture_command_output(cmd)
+            }
           }
           OutputFormat::TapStderr => {
             let stderr_lock = io::stderr();
@@ -743,22 +742,21 @@ impl<'src, D> Recipe<'src, D> {
         OutputFormat::Tap => capture_command_output(command),
         OutputFormat::TapStreamedOutput => {
           use std::io::IsTerminal;
-          let stdout_lock = io::stdout();
-          let is_tty = stdout_lock.is_terminal();
-          let proc = Mutex::new(rust_crap::StatusLineProcessor::new());
-          stream_command_output(command, &|chunk| {
-            let mut proc = proc.lock().unwrap();
-            let mut stdout = stdout_lock.lock();
-            for line in proc.feed(chunk) {
-              if is_tty {
+          if io::stdout().is_terminal() {
+            let stdout_lock = io::stdout();
+            let proc = Mutex::new(rust_crap::StatusLineProcessor::new());
+            stream_command_output(command, &|chunk| {
+              let mut proc = proc.lock().unwrap();
+              let mut stdout = stdout_lock.lock();
+              for line in proc.feed(chunk) {
                 write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
-              } else {
-                write!(stdout, "\r\x1b[2K# {line}")?;
+                stdout.flush()?;
               }
-              stdout.flush()?;
-            }
-            Ok(())
-          })
+              Ok(())
+            })
+          } else {
+            capture_command_output(command)
+          }
         }
         OutputFormat::TapStderr => {
           let stderr_lock = io::stderr();
