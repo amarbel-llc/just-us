@@ -457,6 +457,7 @@ impl<'src> Justfile<'src> {
       is_dependency,
       tap_output_buf.as_ref(),
       output_format,
+      None,
     );
 
     if let Some(tap) = tap {

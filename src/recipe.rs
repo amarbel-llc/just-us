@@ -356,6 +356,7 @@ impl<'src, D> Recipe<'src, D> {
     is_dependency: bool,
     tap_output: Option<&Mutex<Vec<u8>>>,
     output_format: OutputFormat,
+    crap_writer: Option<&Mutex<rust_crap::CrapWriter<'_>>>,
   ) -> RunResult<'src, ()> {
     let color = context.config.color.stderr().banner();
     let prefix = color.prefix();
@@ -381,6 +382,7 @@ impl<'src, D> Recipe<'src, D> {
         evaluator,
         tap_output,
         output_format,
+        crap_writer,
       )
     } else {
       self.run_linewise(
@@ -390,6 +392,7 @@ impl<'src, D> Recipe<'src, D> {
         evaluator,
         tap_output,
         output_format,
+        crap_writer,
       )
     }
   }
@@ -402,6 +405,7 @@ impl<'src, D> Recipe<'src, D> {
     mut evaluator: Evaluator<'src, 'run>,
     tap_output: Option<&Mutex<Vec<u8>>>,
     output_format: OutputFormat,
+    crap_writer: Option<&Mutex<rust_crap::CrapWriter<'_>>>,
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
@@ -622,6 +626,7 @@ impl<'src, D> Recipe<'src, D> {
     mut evaluator: Evaluator<'src, 'run>,
     tap_output: Option<&Mutex<Vec<u8>>>,
     output_format: OutputFormat,
+    crap_writer: Option<&Mutex<rust_crap::CrapWriter<'_>>>,
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
