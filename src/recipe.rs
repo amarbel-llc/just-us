@@ -536,7 +536,7 @@ impl<'src, D> Recipe<'src, D> {
               stderr.write_all(chunk)
             })
           }
-          _ => unreachable!(),
+          OutputFormat::Default => unreachable!(),
         };
 
         match result {
@@ -766,7 +766,7 @@ impl<'src, D> Recipe<'src, D> {
             stderr.write_all(chunk)
           })
         }
-        _ => unreachable!(),
+        OutputFormat::Default => unreachable!(),
       };
 
       match result {

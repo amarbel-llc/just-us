@@ -320,7 +320,11 @@ impl<'src> Justfile<'src> {
         search,
         Some(&tap_tally),
         output_format,
-        Some(&crap_writer),
+        if output_format == OutputFormat::TapStreamedOutput {
+          Some(&crap_writer)
+        } else {
+          None
+        },
       );
     }
 
