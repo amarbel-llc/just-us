@@ -13,7 +13,7 @@ fn single_passing_recipe() {
     .output_format(Some("tap"))
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -31,7 +31,7 @@ fn single_failing_recipe() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("test")
-    .stdout_regex("CRAP-2\n1::1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -51,7 +51,7 @@ fn multiple_recipes_all_pass() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .args(["build", "lint"])
-    .stdout_regex("CRAP-2\n1::2\nok 1 - build\n  ---\n  output: \"building\"\n  \\.\\.\\.\nok 2 - lint\n  ---\n  output: \"linting\"\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..2\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 2 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -74,7 +74,7 @@ fn mixed_results_continues_past_failure() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .args(["build", "test", "lint"])
-    .stdout_regex("CRAP-2\n1::3\nok 1 - build\n  ---\n  output: \"building\"\n  \\.\\.\\.\nnot ok 2 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\nok 3 - lint\n  ---\n  output: \"linting\"\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..3\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nnot ok 2 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\nok 3 - lint\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -92,7 +92,7 @@ fn tap_captures_recipe_output() {
     .output_format(Some("tap"))
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"captured-output\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    captured-output\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -112,7 +112,7 @@ fn output_format_with_env_var() {
     .output_format(None)
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -133,7 +133,7 @@ fn tap_expands_dependencies() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("build")
-    .stdout_regex("CRAP-2\n1::2\nok 1 - compile\n  ---\n  output: \"compiling\"\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \"building\"\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..2\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -156,7 +156,7 @@ fn tap_expands_deep_dependencies() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("test")
-    .stdout_regex("CRAP-2\n1::3\nok 1 - compile\n  ---\n  output: \"compiling\"\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \"building\"\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \"testing\"\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..3\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -176,7 +176,7 @@ fn tap_failing_dependency() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("build")
-    .stdout_regex("CRAP-2\n1::2\nnot ok 1 - compile\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..2\nnot ok 1 - compile\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -195,8 +195,8 @@ fn tap_quiet_recipe_suppresses_yaml() {
     .arg("build")
     .stdout(
       "
-      CRAP-2
-      1::1
+      TAP version 14
+      1..1
       ok 1 - build
       ",
     )
@@ -218,8 +218,8 @@ fn tap_no_output_no_yaml_block() {
     .arg("build")
     .stdout(
       "
-      CRAP-2
-      1::1
+      TAP version 14
+      1..1
       ok 1 - build
       ",
     )
@@ -245,7 +245,7 @@ fn tap_shared_dependency_runs_once() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .args(["build", "test"])
-    .stdout_regex("CRAP-2\n1::3\nok 1 - compile\n  ---\n  output: \"compiling\"\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \"building\"\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \"testing\"\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..3\nok 1 - compile\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\nok 3 - test\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -265,7 +265,7 @@ fn output_format_justfile_setting() {
     .output_format(None)
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -306,8 +306,8 @@ fn tap_set_quiet_suppresses_yaml() {
     .arg("build")
     .stdout(
       "
-      CRAP-2
-      1::1
+      TAP version 14
+      1..1
       ok 1 - build
       ",
     )
@@ -330,8 +330,8 @@ fn tap_cli_quiet_suppresses_yaml() {
     .arg("build")
     .stdout(
       "
-      CRAP-2
-      1::1
+      TAP version 14
+      1..1
       ok 1 - build
       ",
     )
@@ -353,8 +353,8 @@ fn tap_quiet_failing_suppresses_yaml() {
     .arg("test")
     .stdout(
       "
-      CRAP-2
-      1::1
+      TAP version 14
+      1..1
       not ok 1 - test
       ",
     )
@@ -379,7 +379,7 @@ fn tap_no_quiet_overrides_set_quiet() {
     .output_format(None)
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -397,7 +397,7 @@ fn tap_stream_comments_single_recipe() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -414,7 +414,7 @@ fn tap_stream_comments_failing() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("test")
-    .stdout_regex("CRAP-2\n1::1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2Knot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }
@@ -431,7 +431,7 @@ fn tap_stream_comments_no_output_field() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -449,7 +449,7 @@ fn tap_stream_stderr_single_recipe() {
     .output_format(Some("tap+stderr"))
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n",
     )
     .stderr_regex("hello\n")
     .success();
@@ -467,7 +467,7 @@ fn tap_stream_stderr_failing() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+stderr"))
     .arg("test")
-    .stdout_regex("CRAP-2\n1::1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..1\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .failure();
 }
 
@@ -484,7 +484,7 @@ fn tap_stream_buffered_explicit() {
     .output_format(Some("tap"))
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -504,7 +504,7 @@ fn tap_stream_justfile_setting() {
     .env("LC_ALL", "C")
     .output_format(None)
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -524,7 +524,7 @@ fn tap_stream_cli_overrides_setting() {
     .output_format(Some("tap"))
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    hello\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -543,7 +543,7 @@ fn tap_stream_env_var() {
     .env("JUST_OUTPUT_FORMAT", "tap+streamed_output")
     .output_format(None)
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -561,7 +561,7 @@ fn tap_stream_comments_multiline() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# line1\r\x1b\\[2K# line2\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -579,7 +579,7 @@ fn tap_recipe_comment_as_tap_comment() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build # Build the project\n  ---\n  output: \"building\"\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..1\nok 1 - build # Build the project\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -597,7 +597,7 @@ fn tap_recipe_doc_attribute_as_tap_comment() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("test")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - test # Run the test suite\n  ---\n  output: \"testing\"\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..1\nok 1 - test # Run the test suite\n  ---\n  output: \\|\n    testing\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -615,7 +615,7 @@ fn tap_no_comment_without_doc() {
     .output_format(Some("tap"))
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\nok 1 - build\n  ---\n  output: \"building\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \\|\n    building\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -638,7 +638,7 @@ fn tap_multiple_recipes_with_comments() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .args(["compile", "lint"])
-    .stdout_regex("CRAP-2\n1::2\nok 1 - compile # Compile the source\n  ---\n  output: \"compiling\"\n  \\.\\.\\.\nok 2 - lint # Run the linter\n  ---\n  output: \"linting\"\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..2\nok 1 - compile # Compile the source\n  ---\n  output: \\|\n    compiling\n  \\.\\.\\.\nok 2 - lint # Run the linter\n  ---\n  output: \\|\n    linting\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -655,7 +655,7 @@ fn tap_stream_streamed_output_canonical_name() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -673,7 +673,7 @@ fn tap_color_always_colorizes_ok() {
     .env("LC_ALL", "C")
     .args(["--color", "always"])
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\n\x1b\\[32mok\x1b\\[0m 1 - build\n")
+    .stdout_regex("TAP version 14\n1..1\n\x1b\\[32mok\x1b\\[0m 1 - build\n")
     .stderr("")
     .success();
 }
@@ -691,7 +691,7 @@ fn tap_color_always_colorizes_not_ok() {
     .env("LC_ALL", "C")
     .args(["--color", "always"])
     .arg("test")
-    .stdout_regex("CRAP-2\n1::1\n\x1b\\[31mnot ok\x1b\\[0m 1 - test\n")
+    .stdout_regex("TAP version 14\n1..1\n\x1b\\[31mnot ok\x1b\\[0m 1 - test\n")
     .stderr("")
     .failure();
 }
@@ -711,8 +711,8 @@ fn tap_color_never_no_ansi() {
     .arg("build")
     .stdout(
       "
-      CRAP-2
-      1::1
+      TAP version 14
+      1..1
       ok 1 - build
       ",
     )
@@ -735,9 +735,9 @@ fn tap_locale_emits_pragma_and_formats_plan() {
     .arg("build")
     .stdout(
       "
-      CRAP-2
+      TAP version 14
       pragma +locale-formatting:en-US
-      1::1
+      1..1
       ok 1 - build
       ",
     )
@@ -760,9 +760,9 @@ fn tap_locale_lc_all_posix_underscore() {
     .arg("build")
     .stdout(
       "
-      CRAP-2
+      TAP version 14
       pragma +locale-formatting:de-DE
-      1::1
+      1..1
       ok 1 - build
       ",
     )
@@ -784,7 +784,7 @@ fn tap_color_always_yaml_output_preserves_sgr() {
     .args(["--color", "always"])
     .arg("build")
     .stdout_regex(
-      "CRAP-2\n1::1\n\x1b\\[32mok\x1b\\[0m 1 - build\n  ---\n  output: \"\x1b\\[1mbold output\x1b\\[0m\"\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\n\x1b\\[32mok\x1b\\[0m 1 - build\n  ---\n  output: \\|\n    \x1b\\[1mbold output\x1b\\[0m\n  \\.\\.\\.\n",
     )
     .stderr("")
     .success();
@@ -805,11 +805,12 @@ fn tap_color_never_yaml_output_strips_ansi() {
     .arg("build")
     .stdout(
       "
-      CRAP-2
-      1::1
+      TAP version 14
+      1..1
       ok 1 - build
         ---
-        output: \"bold output\"
+        output: |
+          bold output
         ...
       ",
     )
@@ -831,7 +832,7 @@ fn tap_stream_streamed_output_elides_empty_lines() {
     .output_format(Some("tap+streamed_output"))
     .env("LC_ALL", "C")
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# line1\r\x1b\\[2K# line2\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -848,7 +849,7 @@ fn default_output_is_tap_streamed() {
     .output_format(None)
     .env("LC_ALL", "C")
     .arg("build")
-    .stdout_regex("CRAP-2\n1::1\nok 1 - build\n")
+    .stdout_regex("TAP version 14\npragma \\+tty-build-last-line\n1\\.\\.1\n\r\x1b\\[2K# hello\r\x1b\\[2Kok 1 - build\n")
     .stderr("")
     .success();
 }
