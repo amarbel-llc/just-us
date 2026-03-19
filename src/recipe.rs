@@ -516,17 +516,15 @@ impl<'src, D> Recipe<'src, D> {
           OutputFormat::TapStreamedOutput => {
             use std::io::IsTerminal;
             if io::stdout().is_terminal() {
-              let stdout_lock = io::stdout();
-              let proc = Mutex::new(rust_crap::StatusLineProcessor::new());
-              stream_command_output(cmd, &|chunk| {
-                let mut proc = proc.lock().unwrap();
-                let mut stdout = stdout_lock.lock();
-                for line in proc.feed(chunk) {
-                  write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
-                  stdout.flush()?;
-                }
-                Ok(())
-              })
+              if let Some(writer) = crap_writer {
+                stream_command_output(cmd, &|chunk| {
+                  let mut w = writer.lock().unwrap();
+                  w.feed_status_bytes(chunk)?;
+                  w.update_in_progress()
+                })
+              } else {
+                capture_command_output(cmd)
+              }
             } else {
               capture_command_output(cmd)
             }
@@ -748,17 +746,15 @@ impl<'src, D> Recipe<'src, D> {
         OutputFormat::TapStreamedOutput => {
           use std::io::IsTerminal;
           if io::stdout().is_terminal() {
-            let stdout_lock = io::stdout();
-            let proc = Mutex::new(rust_crap::StatusLineProcessor::new());
-            stream_command_output(command, &|chunk| {
-              let mut proc = proc.lock().unwrap();
-              let mut stdout = stdout_lock.lock();
-              for line in proc.feed(chunk) {
-                write!(stdout, "\r\x1b[2K\x1b[?7l# {line}\x1b[?7h")?;
-                stdout.flush()?;
-              }
-              Ok(())
-            })
+            if let Some(writer) = crap_writer {
+              stream_command_output(command, &|chunk| {
+                let mut w = writer.lock().unwrap();
+                w.feed_status_bytes(chunk)?;
+                w.update_in_progress()
+              })
+            } else {
+              capture_command_output(command)
+            }
           } else {
             capture_command_output(command)
           }
