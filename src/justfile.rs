@@ -247,7 +247,6 @@ impl<'src> Justfile<'src> {
         search,
         None,
         OutputFormat::Default,
-        None,
       )?;
     }
 
@@ -291,17 +290,16 @@ impl<'src> Justfile<'src> {
       plan_count += Self::count_recipes(invocation.recipe, &mut seen, config.no_dependencies);
     }
 
-    let mut stdout = io::stdout().lock();
-    let writer = rust_crap::CrapWriterBuilder::new(&mut stdout)
-      .color(color)
-      .default_locale()
-      .status_line(output_format == OutputFormat::TapStreamedOutput)
-      .build()
-      .map_err(|io_error| Error::StdoutIo { io_error })?;
-    let crap_writer = Mutex::new(writer);
     {
-      let mut w = crap_writer.lock().unwrap();
-      w.plan_ahead(plan_count)
+      let mut stdout = io::stdout().lock();
+      let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+        .color(color)
+        .default_locale()
+        .tty_build_last_line(output_format == OutputFormat::TapStreamedOutput)
+        .build()
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
+      writer
+        .plan_ahead(plan_count)
         .map_err(|io_error| Error::StdoutIo { io_error })?;
     }
 
@@ -320,11 +318,6 @@ impl<'src> Justfile<'src> {
         search,
         Some(&tap_tally),
         output_format,
-        if output_format == OutputFormat::TapStreamedOutput {
-          Some(&crap_writer)
-        } else {
-          None
-        },
       );
     }
 
@@ -383,7 +376,6 @@ impl<'src> Justfile<'src> {
     search: &Search,
     tap: Option<&Mutex<TapTally>>,
     output_format: OutputFormat,
-    crap_writer: Option<&Mutex<rust_crap::CrapWriter<'_>>>,
   ) -> RunResult<'src> {
     {
       let mutex = ran.mutex(recipe, arguments);
@@ -454,16 +446,9 @@ impl<'src> Justfile<'src> {
       search,
       tap,
       output_format,
-      crap_writer,
     )?;
 
     let tap_output_buf = tap.as_ref().map(|_| Mutex::new(Vec::<u8>::new()));
-
-    if let Some(writer) = crap_writer {
-      let mut w = writer.lock().unwrap();
-      w.start_test_point(recipe.name())
-        .map_err(|io_error| Error::StdoutIo { io_error })?;
-    }
 
     let run_result = recipe.run(
       &context,
@@ -472,7 +457,6 @@ impl<'src> Justfile<'src> {
       is_dependency,
       tap_output_buf.as_ref(),
       output_format,
-      crap_writer,
     );
 
     if let Some(tap) = tap {
@@ -503,7 +487,7 @@ impl<'src> Justfile<'src> {
       let comment = recipe.doc().map(Into::into);
 
       let test_result = match run_result {
-        Ok(()) => rust_crap::TestResult {
+        Ok(()) => tap_dancer::TestResult {
           number,
           name: recipe.name().into(),
           ok: true,
@@ -516,7 +500,7 @@ impl<'src> Justfile<'src> {
         },
         Err(ref error) => {
           tap.failures += 1;
-          rust_crap::TestResult {
+          tap_dancer::TestResult {
             number,
             name: recipe.name().into(),
             ok: false,
@@ -529,22 +513,19 @@ impl<'src> Justfile<'src> {
         }
       };
 
-      if let Some(writer) = crap_writer {
-        let mut w = writer.lock().unwrap();
-        w.finish_test_point(&test_result)
-          .map_err(|io_error| Error::StdoutIo { io_error })?;
-      } else {
-        // Non-streamed TAP: use test_point as before
-        let mut stdout = io::stdout().lock();
-        let mut writer = rust_crap::CrapWriterBuilder::new(&mut stdout)
-          .color(tap.color)
-          .default_locale()
-          .build_without_printing()
-          .map_err(|io_error| Error::StdoutIo { io_error })?;
-        writer
-          .test_point(&test_result)
-          .map_err(|io_error| Error::StdoutIo { io_error })?;
+      let mut stdout = io::stdout().lock();
+      if output_format == OutputFormat::TapStreamedOutput {
+        write!(stdout, "\r\x1b[2K").map_err(|io_error| Error::StdoutIo { io_error })?;
+        stdout.flush().map_err(|io_error| Error::StdoutIo { io_error })?;
       }
+      let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+        .color(tap.color)
+        .default_locale()
+        .build_without_printing()
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
+      writer
+        .test_point(&test_result)
+        .map_err(|io_error| Error::StdoutIo { io_error })?;
 
       if let Err(error) = run_result {
         return Err(error);
@@ -565,7 +546,6 @@ impl<'src> Justfile<'src> {
       search,
       tap,
       output_format,
-      crap_writer,
     )?;
 
     Ok(())
@@ -583,7 +563,6 @@ impl<'src> Justfile<'src> {
     search: &Search,
     tap: Option<&Mutex<TapTally>>,
     output_format: OutputFormat,
-    crap_writer: Option<&Mutex<rust_crap::CrapWriter<'_>>>,
   ) -> RunResult<'src> {
     if context.config.no_dependencies {
       return Ok(());
@@ -618,9 +597,6 @@ impl<'src> Justfile<'src> {
               search,
               tap,
               output_format,
-              // CrapWriter is not Send/Sync, so parallel deps can't share it.
-              // finish_test_point falls back to test_point when crap_writer is None.
-              None,
             )
           }));
         }
@@ -644,7 +620,6 @@ impl<'src> Justfile<'src> {
           search,
           tap,
           output_format,
-          crap_writer,
         )?;
       }
     }
