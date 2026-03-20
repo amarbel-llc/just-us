@@ -914,3 +914,63 @@ fn tap_streamed_recipe_outputting_tap_becomes_subtest() {
     .stderr("")
     .success();
 }
+
+#[test]
+fn tap_recipe_non_tap_output_unchanged() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo 'not a TAP document'
+      ",
+    )
+    .env("LC_ALL", "C")
+    .output_format(Some("tap"))
+    .arg("build")
+    .stdout_regex(
+      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"not a TAP document\"\n  \\.\\.\\.\n",
+    )
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_streamed_recipe_non_tap_output_unchanged() {
+  Test::new()
+    .justfile(
+      "
+      build:
+        echo 'not a TAP document'
+      ",
+    )
+    .env("LC_ALL", "C")
+    .output_format(Some("tap+streamed_output"))
+    .arg("build")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# not a TAP document\nok 1 - build\n")
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_recipe_outputting_tap_failing_becomes_subtest() {
+  Test::new()
+    .justfile(
+      r#"
+      test:
+        #!/bin/sh
+        echo "TAP version 14"
+        echo "1..2"
+        echo "ok 1 - sub-a"
+        echo "not ok 2 - sub-b"
+        exit 1
+      "#,
+    )
+    .env("LC_ALL", "C")
+    .output_format(Some("tap"))
+    .arg("test")
+    .stdout_regex(
+      "TAP version 14\n1..1\n    # Subtest: test\n    TAP version 14\n    1..2\n    ok 1 - sub-a\n    not ok 2 - sub-b\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n",
+    )
+    .stderr("")
+    .failure();
+}
