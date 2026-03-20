@@ -1,5 +1,40 @@
 use super::*;
 
+fn tap_stream_sink<'a>(
+  stdout_lock: &'a io::Stdout,
+  line_buf: &'a Mutex<Vec<u8>>,
+  is_tap_subtest: &'a Mutex<Option<bool>>,
+  recipe_name: &'a str,
+) -> impl Fn(&[u8]) -> io::Result<()> + 'a {
+  move |chunk| {
+    let mut buf = line_buf.lock().unwrap();
+    buf.extend_from_slice(chunk);
+    let mut stdout = stdout_lock.lock();
+    while let Some(pos) = buf.iter().position(|&b| b == b'\n' || b == b'\r') {
+      let line = String::from_utf8_lossy(&buf[..pos]);
+      let line = line.trim();
+      if !line.is_empty() {
+        let mut is_sub = is_tap_subtest.lock().unwrap();
+        if is_sub.is_none() {
+          if line == "TAP version 14" {
+            *is_sub = Some(true);
+            writeln!(stdout, "    # Subtest: {recipe_name}")?;
+          } else {
+            *is_sub = Some(false);
+          }
+        }
+        if *is_sub == Some(true) {
+          writeln!(stdout, "    {line}")?;
+        } else {
+          writeln!(stdout, "# {line}")?;
+        }
+      }
+      buf.drain(..=pos);
+    }
+    Ok(())
+  }
+}
+
 /// Capture command output, using a PTY when stdout is a terminal so that
 /// child processes produce colored output.
 #[cfg(unix)]
@@ -514,33 +549,9 @@ impl<'src, D> Recipe<'src, D> {
             let line_buf = Mutex::new(Vec::<u8>::new());
             let is_tap_subtest = Mutex::new(Option::<bool>::None);
             let recipe_name = self.name();
-            stream_command_output(cmd, &|chunk| {
-              let mut buf = line_buf.lock().unwrap();
-              buf.extend_from_slice(chunk);
-              let mut stdout = stdout_lock.lock();
-              while let Some(pos) = buf.iter().position(|&b| b == b'\n' || b == b'\r') {
-                let line = String::from_utf8_lossy(&buf[..pos]);
-                let line = line.trim();
-                if !line.is_empty() {
-                  let mut is_sub = is_tap_subtest.lock().unwrap();
-                  if is_sub.is_none() {
-                    if line == "TAP version 14" {
-                      *is_sub = Some(true);
-                      writeln!(stdout, "    # Subtest: {recipe_name}")?;
-                    } else {
-                      *is_sub = Some(false);
-                    }
-                  }
-                  if *is_sub == Some(true) {
-                    writeln!(stdout, "    {line}")?;
-                  } else {
-                    writeln!(stdout, "# {line}")?;
-                  }
-                }
-                buf.drain(..=pos);
-              }
-              Ok(())
-            })
+            let sink =
+              tap_stream_sink(&stdout_lock, &line_buf, &is_tap_subtest, recipe_name);
+            stream_command_output(cmd, &sink)
           }
           OutputFormat::TapStderr => {
             let stderr_lock = io::stderr();
@@ -760,33 +771,9 @@ impl<'src, D> Recipe<'src, D> {
           let line_buf = Mutex::new(Vec::<u8>::new());
           let is_tap_subtest = Mutex::new(Option::<bool>::None);
           let recipe_name = self.name();
-          stream_command_output(command, &|chunk| {
-            let mut buf = line_buf.lock().unwrap();
-            buf.extend_from_slice(chunk);
-            let mut stdout = stdout_lock.lock();
-            while let Some(pos) = buf.iter().position(|&b| b == b'\n' || b == b'\r') {
-              let line = String::from_utf8_lossy(&buf[..pos]);
-              let line = line.trim();
-              if !line.is_empty() {
-                let mut is_sub = is_tap_subtest.lock().unwrap();
-                if is_sub.is_none() {
-                  if line == "TAP version 14" {
-                    *is_sub = Some(true);
-                    writeln!(stdout, "    # Subtest: {recipe_name}")?;
-                  } else {
-                    *is_sub = Some(false);
-                  }
-                }
-                if *is_sub == Some(true) {
-                  writeln!(stdout, "    {line}")?;
-                } else {
-                  writeln!(stdout, "# {line}")?;
-                }
-              }
-              buf.drain(..=pos);
-            }
-            Ok(())
-          })
+          let sink =
+            tap_stream_sink(&stdout_lock, &line_buf, &is_tap_subtest, recipe_name);
+          stream_command_output(command, &sink)
         }
         OutputFormat::TapStderr => {
           let stderr_lock = io::stderr();

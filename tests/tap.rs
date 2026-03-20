@@ -974,3 +974,27 @@ fn tap_recipe_outputting_tap_failing_becomes_subtest() {
     .stderr("")
     .failure();
 }
+
+#[test]
+fn tap_streamed_recipe_outputting_tap_failing_becomes_subtest() {
+  Test::new()
+    .justfile(
+      r#"
+      test:
+        #!/bin/sh
+        echo "TAP version 14"
+        echo "1..2"
+        echo "ok 1 - sub-a"
+        echo "not ok 2 - sub-b"
+        exit 1
+      "#,
+    )
+    .env("LC_ALL", "C")
+    .output_format(Some("tap+streamed_output"))
+    .arg("test")
+    .stdout_regex(
+      "TAP version 14\n1\\.\\.1\n    # Subtest: test\n    TAP version 14\n    1\\.\\.2\n    ok 1 - sub-a\n    not ok 2 - sub-b\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n",
+    )
+    .stderr("")
+    .failure();
+}

@@ -488,6 +488,8 @@ impl<'src> Justfile<'src> {
       let mut stdout = io::stdout().lock();
 
       if is_subtest {
+        // In streamed mode, the subtest content was already written to stdout
+        // by the streaming closure in recipe.rs, so skip re-emitting it here.
         if output_format != OutputFormat::TapStreamedOutput {
           let output = output.unwrap();
           writeln!(stdout, "    # Subtest: {}", recipe.name())
