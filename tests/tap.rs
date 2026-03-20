@@ -868,3 +868,49 @@ fn output_format_default_produces_plain_output() {
     .stderr("echo hello\n")
     .success();
 }
+
+#[test]
+fn tap_recipe_outputting_tap_becomes_subtest() {
+  Test::new()
+    .justfile(
+      r#"
+      test:
+        #!/bin/sh
+        echo "TAP version 14"
+        echo "1..2"
+        echo "ok 1 - sub-a"
+        echo "ok 2 - sub-b"
+      "#,
+    )
+    .env("LC_ALL", "C")
+    .output_format(Some("tap"))
+    .arg("test")
+    .stdout_regex(
+      "TAP version 14\n1..1\n    # Subtest: test\n    TAP version 14\n    1..2\n    ok 1 - sub-a\n    ok 2 - sub-b\nok 1 - test\n",
+    )
+    .stderr("")
+    .success();
+}
+
+#[test]
+fn tap_streamed_recipe_outputting_tap_becomes_subtest() {
+  Test::new()
+    .justfile(
+      r#"
+      test:
+        #!/bin/sh
+        echo "TAP version 14"
+        echo "1..2"
+        echo "ok 1 - sub-a"
+        echo "ok 2 - sub-b"
+      "#,
+    )
+    .env("LC_ALL", "C")
+    .output_format(Some("tap+streamed_output"))
+    .arg("test")
+    .stdout_regex(
+      "TAP version 14\n1\\.\\.1\n    # Subtest: test\n    TAP version 14\n    1\\.\\.2\n    ok 1 - sub-a\n    ok 2 - sub-b\nok 1 - test\n",
+    )
+    .stderr("")
+    .success();
+}
