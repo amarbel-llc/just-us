@@ -476,47 +476,98 @@ impl<'src> Justfile<'src> {
         })
         .filter(|s| !s.is_empty());
 
+      let is_subtest = output
+        .as_ref()
+        .is_some_and(|o| o.lines().next().is_some_and(|l| l.trim() == "TAP version 14"));
+
       let quiet =
         recipe.quiet || (module.settings.quiet && !recipe.no_quiet()) || config.verbosity.quiet();
 
       let comment = recipe.doc().map(Into::into);
 
-      let test_result = match run_result {
-        Ok(()) => tap_dancer::TestResult {
-          number,
-          name: recipe.name().into(),
-          ok: true,
-          directive: comment,
-          error_message: None,
-          exit_code: None,
-          output,
-          suppress_yaml: quiet
-            || (output_format == OutputFormat::TapStreamedOutput && !config.verbosity.loquacious()),
-        },
-        Err(ref error) => {
-          tap.failures += 1;
-          tap_dancer::TestResult {
+      let mut stdout = io::stdout().lock();
+
+      if is_subtest {
+        let output = output.unwrap();
+        writeln!(stdout, "    # Subtest: {}", recipe.name())
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+        for line in output.lines() {
+          writeln!(stdout, "    {line}")
+            .map_err(|io_error| Error::StdoutIo { io_error })?;
+        }
+
+        let test_result = match run_result {
+          Ok(()) => tap_dancer::TestResult {
             number,
             name: recipe.name().into(),
-            ok: false,
+            ok: true,
             directive: comment,
-            error_message: Some(format!("{}", error.color_display(Color::never()))),
-            exit_code: error.code(),
-            output,
-            suppress_yaml: quiet,
+            error_message: None,
+            exit_code: None,
+            output: None,
+            suppress_yaml: true,
+          },
+          Err(ref error) => {
+            tap.failures += 1;
+            tap_dancer::TestResult {
+              number,
+              name: recipe.name().into(),
+              ok: false,
+              directive: comment,
+              error_message: Some(format!("{}", error.color_display(Color::never()))),
+              exit_code: error.code(),
+              output: None,
+              suppress_yaml: quiet,
+            }
           }
-        }
-      };
+        };
 
-      let mut stdout = io::stdout().lock();
-      let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
-        .color(tap.color)
-        .default_locale()
-        .build_without_printing()
-        .map_err(|io_error| Error::StdoutIo { io_error })?;
-      writer
-        .test_point(&test_result)
-        .map_err(|io_error| Error::StdoutIo { io_error })?;
+        let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+          .color(tap.color)
+          .default_locale()
+          .build_without_printing()
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+        writer
+          .test_point(&test_result)
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+      } else {
+        let test_result = match run_result {
+          Ok(()) => tap_dancer::TestResult {
+            number,
+            name: recipe.name().into(),
+            ok: true,
+            directive: comment,
+            error_message: None,
+            exit_code: None,
+            output,
+            suppress_yaml: quiet
+              || (output_format == OutputFormat::TapStreamedOutput
+                && !config.verbosity.loquacious()),
+          },
+          Err(ref error) => {
+            tap.failures += 1;
+            tap_dancer::TestResult {
+              number,
+              name: recipe.name().into(),
+              ok: false,
+              directive: comment,
+              error_message: Some(format!("{}", error.color_display(Color::never()))),
+              exit_code: error.code(),
+              output,
+              suppress_yaml: quiet,
+            }
+          }
+        };
+
+        let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+          .color(tap.color)
+          .default_locale()
+          .build_without_printing()
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+        writer
+          .test_point(&test_result)
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+      }
 
       if let Err(error) = run_result {
         return Err(error);
