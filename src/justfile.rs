@@ -488,12 +488,14 @@ impl<'src> Justfile<'src> {
       let mut stdout = io::stdout().lock();
 
       if is_subtest {
-        let output = output.unwrap();
-        writeln!(stdout, "    # Subtest: {}", recipe.name())
-          .map_err(|io_error| Error::StdoutIo { io_error })?;
-        for line in output.lines() {
-          writeln!(stdout, "    {line}")
+        if output_format != OutputFormat::TapStreamedOutput {
+          let output = output.unwrap();
+          writeln!(stdout, "    # Subtest: {}", recipe.name())
             .map_err(|io_error| Error::StdoutIo { io_error })?;
+          for line in output.lines() {
+            writeln!(stdout, "    {line}")
+              .map_err(|io_error| Error::StdoutIo { io_error })?;
+          }
         }
 
         let test_result = match run_result {

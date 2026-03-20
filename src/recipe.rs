@@ -512,6 +512,8 @@ impl<'src, D> Recipe<'src, D> {
           OutputFormat::TapStreamedOutput => {
             let stdout_lock = io::stdout();
             let line_buf = Mutex::new(Vec::<u8>::new());
+            let is_tap_subtest = Mutex::new(Option::<bool>::None);
+            let recipe_name = self.name();
             stream_command_output(cmd, &|chunk| {
               let mut buf = line_buf.lock().unwrap();
               buf.extend_from_slice(chunk);
@@ -520,7 +522,20 @@ impl<'src, D> Recipe<'src, D> {
                 let line = String::from_utf8_lossy(&buf[..pos]);
                 let line = line.trim();
                 if !line.is_empty() {
-                  writeln!(stdout, "# {line}")?;
+                  let mut is_sub = is_tap_subtest.lock().unwrap();
+                  if is_sub.is_none() {
+                    if line == "TAP version 14" {
+                      *is_sub = Some(true);
+                      writeln!(stdout, "    # Subtest: {recipe_name}")?;
+                    } else {
+                      *is_sub = Some(false);
+                    }
+                  }
+                  if *is_sub == Some(true) {
+                    writeln!(stdout, "    {line}")?;
+                  } else {
+                    writeln!(stdout, "# {line}")?;
+                  }
                 }
                 buf.drain(..=pos);
               }
@@ -743,6 +758,8 @@ impl<'src, D> Recipe<'src, D> {
         OutputFormat::TapStreamedOutput => {
           let stdout_lock = io::stdout();
           let line_buf = Mutex::new(Vec::<u8>::new());
+          let is_tap_subtest = Mutex::new(Option::<bool>::None);
+          let recipe_name = self.name();
           stream_command_output(command, &|chunk| {
             let mut buf = line_buf.lock().unwrap();
             buf.extend_from_slice(chunk);
@@ -751,7 +768,20 @@ impl<'src, D> Recipe<'src, D> {
               let line = String::from_utf8_lossy(&buf[..pos]);
               let line = line.trim();
               if !line.is_empty() {
-                writeln!(stdout, "# {line}")?;
+                let mut is_sub = is_tap_subtest.lock().unwrap();
+                if is_sub.is_none() {
+                  if line == "TAP version 14" {
+                    *is_sub = Some(true);
+                    writeln!(stdout, "    # Subtest: {recipe_name}")?;
+                  } else {
+                    *is_sub = Some(false);
+                  }
+                }
+                if *is_sub == Some(true) {
+                  writeln!(stdout, "    {line}")?;
+                } else {
+                  writeln!(stdout, "# {line}")?;
+                }
               }
               buf.drain(..=pos);
             }
