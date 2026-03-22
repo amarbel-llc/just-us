@@ -176,7 +176,7 @@ fn tap_failing_dependency() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("build")
-    .stdout_regex("TAP version 14\n1..2\nnot ok 1 - compile\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
+    .stdout_regex("TAP version 14\n1..2\nnot ok 1 - compile\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\nnot ok 2 - build\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n")
     .stderr("")
     .failure();
 }

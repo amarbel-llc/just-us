@@ -433,7 +433,7 @@ impl<'src> Justfile<'src> {
 
     let mut evaluator = Evaluator::new(&context, BTreeMap::new(), true, &scope);
 
-    Self::run_dependencies(
+    if let Err(dep_error) = Self::run_dependencies(
       config,
       &context,
       recipe.priors(),
@@ -445,7 +445,37 @@ impl<'src> Justfile<'src> {
       search,
       tap,
       output_format,
-    )?;
+    ) {
+      if let Some(tap) = tap {
+        let mut tap = tap.lock().unwrap();
+        tap.counter += 1;
+        tap.failures += 1;
+        let number = tap.counter;
+        let comment = recipe.doc().map(Into::into);
+
+        let test_result = tap_dancer::TestResult {
+          number,
+          name: recipe.name().into(),
+          ok: false,
+          directive: comment,
+          error_message: Some(format!("{}", dep_error.color_display(Color::never()))),
+          exit_code: dep_error.code(),
+          output: None,
+          suppress_yaml: false,
+        };
+
+        let mut stdout = io::stdout().lock();
+        let mut writer = tap_dancer::TapWriterBuilder::new(&mut stdout)
+          .color(tap.color)
+          .default_locale()
+          .build_without_printing()
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+        writer
+          .test_point(&test_result)
+          .map_err(|io_error| Error::StdoutIo { io_error })?;
+      }
+      return Err(dep_error);
+    }
 
     let tap_output_buf = tap.as_ref().map(|_| Mutex::new(Vec::<u8>::new()));
 

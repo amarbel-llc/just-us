@@ -122,7 +122,6 @@ JUSTFILE
 # --- Structural validity: dependency failures ---
 
 function buffered_dependency_fails_plan_valid { # @test
-  # Issue #7: plan declares 1..2 but only 1 test point emitted
   write_justfile <<'JUSTFILE'
 compile:
   @exit 1
@@ -134,7 +133,28 @@ JUSTFILE
   run_tap build
   assert_failure
   assert_line --partial "not ok 1 - compile"
-  # Plan must match actual test point count
+  assert_line --partial "not ok 2 - build"
+  validate_tap
+}
+
+function buffered_deep_dependency_fails_plan_valid { # @test
+  write_justfile <<'JUSTFILE'
+fetch:
+  @exit 1
+
+compile: fetch
+  echo compiling
+
+build: compile
+  echo building
+JUSTFILE
+
+  run_tap build
+  assert_failure
+  assert_line --partial "1..3"
+  assert_line --partial "not ok 1 - fetch"
+  assert_line --partial "not ok 2 - compile"
+  assert_line --partial "not ok 3 - build"
   validate_tap
 }
 
@@ -400,5 +420,112 @@ JUSTFILE
   assert_line --partial "ok 1 - build"
   # Buffered tap has YAML output block, streamed does not
   assert_line --partial "output:"
+  validate_tap
+}
+
+# --- Subtest detection (#3) ---
+
+function buffered_recipe_tap_output_becomes_subtest { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..2\nok 1 - sub-a\nok 2 - sub-b\n'
+JUSTFILE
+
+  run_tap test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "    ok 1 - sub-a"
+  assert_line --partial "    ok 2 - sub-b"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function streamed_recipe_tap_output_becomes_subtest { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..2\nok 1 - sub-a\nok 2 - sub-b\n'
+JUSTFILE
+
+  run_tap_streamed test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "    ok 1 - sub-a"
+  assert_line --partial "    ok 2 - sub-b"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function buffered_failing_subtest { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..2\nok 1 - sub-a\nnot ok 2 - sub-b\n' && exit 1
+JUSTFILE
+
+  run_tap test
+  assert_failure
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "not ok 2 - sub-b"
+  assert_line --partial "not ok 1 - test"
+  validate_tap
+}
+
+function buffered_non_tap_output_not_subtest { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo "not a TAP document"
+JUSTFILE
+
+  run_tap build
+  assert_success
+  refute_line --partial "# Subtest"
+  assert_line --partial "output:"
+  validate_tap
+}
+
+# --- TTY-only ANSI escapes (#5) ---
+
+function streamed_no_ansi_when_not_tty { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo hello
+JUSTFILE
+
+  run_tap_streamed build
+  assert_success
+  refute_output --partial $'\x1b'
+  validate_tap
+}
+
+# --- Empty line filtering (#6) ---
+
+function buffered_empty_lines_filtered { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo line1
+  echo ''
+  echo line2
+JUSTFILE
+
+  run_tap build
+  assert_success
+  assert_line --partial "line1"
+  assert_line --partial "line2"
+  refute_line --regexp "^    $"
+  validate_tap
+}
+
+function streamed_empty_lines_filtered { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo line1
+  echo ''
+  echo line2
+JUSTFILE
+
+  run_tap_streamed build
+  assert_success
+  assert_line --partial "# line1"
+  assert_line --partial "# line2"
+  refute_line --regexp "^# $"
   validate_tap
 }
