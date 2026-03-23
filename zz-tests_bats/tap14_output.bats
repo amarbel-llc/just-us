@@ -482,6 +482,254 @@ JUSTFILE
   validate_tap
 }
 
+# --- Recursive subtests ---
+
+function buffered_recursive_subtest { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..2\n    # Subtest: unit\n    TAP version 14\n    1..2\n    ok 1 - alpha\n    ok 2 - beta\nok 1 - unit\nok 2 - integration\n'
+JUSTFILE
+
+  run_tap test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  # inner subtest header gets 4 more spaces (8 total)
+  assert_line --partial "        # Subtest: unit"
+  assert_line --partial "        ok 1 - alpha"
+  assert_line --partial "        ok 2 - beta"
+  assert_line --partial "    ok 1 - unit"
+  assert_line --partial "    ok 2 - integration"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function streamed_recursive_subtest { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..2\n    # Subtest: unit\n    TAP version 14\n    1..2\n    ok 1 - alpha\n    ok 2 - beta\nok 1 - unit\nok 2 - integration\n'
+JUSTFILE
+
+  run_tap_streamed test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "        # Subtest: unit"
+  assert_line --partial "        ok 1 - alpha"
+  assert_line --partial "        ok 2 - beta"
+  assert_line --partial "    ok 1 - unit"
+  assert_line --partial "    ok 2 - integration"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function buffered_recursive_subtest_inner_failure { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..1\n    # Subtest: unit\n    TAP version 14\n    1..2\n    ok 1 - alpha\n    not ok 2 - beta\nnot ok 1 - unit\n' && exit 1
+JUSTFILE
+
+  run_tap test
+  assert_failure
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "        # Subtest: unit"
+  assert_line --partial "        not ok 2 - beta"
+  assert_line --partial "    not ok 1 - unit"
+  assert_line --partial "not ok 1 - test"
+  validate_tap
+}
+
+function buffered_triple_nested_subtest { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..1\n    # Subtest: suite\n    TAP version 14\n    1..1\n        # Subtest: case\n        TAP version 14\n        1..1\n        ok 1 - assertion\n    ok 1 - case\nok 1 - suite\n'
+JUSTFILE
+
+  run_tap test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  # suite subtest at 8 spaces
+  assert_line --partial "        # Subtest: suite"
+  # case subtest at 12 spaces
+  assert_line --partial "            # Subtest: case"
+  assert_line --partial "            ok 1 - assertion"
+  assert_line --partial "        ok 1 - case"
+  assert_line --partial "    ok 1 - suite"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function buffered_recursive_subtest_with_plain_sibling { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo building
+
+test:
+  @printf 'TAP version 14\n1..1\n    # Subtest: unit\n    TAP version 14\n    1..1\n    ok 1 - alpha\nok 1 - unit\n'
+JUSTFILE
+
+  run_tap build test
+  assert_success
+  assert_line --partial "1..2"
+  # build is plain, no subtest
+  assert_line --partial "ok 1 - build"
+  # test has recursive subtest
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "        # Subtest: unit"
+  assert_line --partial "        ok 1 - alpha"
+  assert_line --partial "    ok 1 - unit"
+  assert_line --partial "ok 2 - test"
+  validate_tap
+}
+
+# --- Recursive subtest edge cases ---
+
+function streamed_recursive_subtest_inner_failure { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..1\n    # Subtest: unit\n    TAP version 14\n    1..2\n    ok 1 - alpha\n    not ok 2 - beta\nnot ok 1 - unit\n' && exit 1
+JUSTFILE
+
+  run_tap_streamed test
+  assert_failure
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "        # Subtest: unit"
+  assert_line --partial "        not ok 2 - beta"
+  assert_line --partial "    not ok 1 - unit"
+  assert_line --partial "not ok 1 - test"
+  validate_tap
+}
+
+function streamed_triple_nested_subtest { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..1\n    # Subtest: suite\n    TAP version 14\n    1..1\n        # Subtest: case\n        TAP version 14\n        1..1\n        ok 1 - assertion\n    ok 1 - case\nok 1 - suite\n'
+JUSTFILE
+
+  run_tap_streamed test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "        # Subtest: suite"
+  assert_line --partial "            # Subtest: case"
+  assert_line --partial "            ok 1 - assertion"
+  assert_line --partial "        ok 1 - case"
+  assert_line --partial "    ok 1 - suite"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function buffered_subtest_with_yaml_diagnostics { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..1\nok 1 - alpha\n  ---\n  duration_ms: 42\n  ...\n'
+JUSTFILE
+
+  run_tap test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "    ok 1 - alpha"
+  assert_line --partial "      ---"
+  assert_line --partial "      duration_ms: 42"
+  assert_line --partial "      ..."
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function streamed_subtest_with_yaml_diagnostics { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..1\nok 1 - alpha\n  ---\n  duration_ms: 42\n  ...\n'
+JUSTFILE
+
+  run_tap_streamed test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "    ok 1 - alpha"
+  assert_line --partial "      ---"
+  assert_line --partial "      duration_ms: 42"
+  assert_line --partial "      ..."
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function buffered_subtest_with_bail_out { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..3\nok 1 - alpha\nBail out! disk full\n' && exit 1
+JUSTFILE
+
+  run_tap test
+  assert_failure
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "    Bail out! disk full"
+  assert_line --partial "not ok 1 - test"
+  validate_tap
+}
+
+function buffered_subtest_plan_at_end { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\nok 1 - alpha\nok 2 - beta\n1..2\n'
+JUSTFILE
+
+  run_tap test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "    ok 1 - alpha"
+  assert_line --partial "    ok 2 - beta"
+  assert_line --partial "    1..2"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function streamed_subtest_plan_at_end { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\nok 1 - alpha\nok 2 - beta\n1..2\n'
+JUSTFILE
+
+  run_tap_streamed test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "    ok 1 - alpha"
+  assert_line --partial "    ok 2 - beta"
+  assert_line --partial "    1..2"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function buffered_subtest_with_todo_and_skip { # @test
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..3\nok 1 - alpha\nnot ok 2 - beta # TODO not yet\nok 3 - gamma # SKIP no db\n'
+JUSTFILE
+
+  run_tap test
+  assert_success
+  assert_line --partial "# Subtest: test"
+  assert_line --partial "    ok 1 - alpha"
+  assert_line --partial "    not ok 2 - beta # TODO not yet"
+  assert_line --partial "    ok 3 - gamma # SKIP no db"
+  assert_line --partial "ok 1 - test"
+  validate_tap
+}
+
+function buffered_dep_outputs_tap_becomes_subtest { # @test
+  write_justfile <<'JUSTFILE'
+compile:
+  @printf 'TAP version 14\n1..1\nok 1 - syntax check\n'
+
+build: compile
+  echo building
+JUSTFILE
+
+  run_tap build
+  assert_success
+  assert_line --partial "# Subtest: compile"
+  assert_line --partial "    ok 1 - syntax check"
+  assert_line --partial "ok 1 - compile"
+  assert_line --partial "ok 2 - build"
+  validate_tap
+}
+
 # --- TTY-only ANSI escapes (#5) ---
 
 function streamed_no_ansi_when_not_tty { # @test
