@@ -549,8 +549,7 @@ impl<'src, D> Recipe<'src, D> {
             let line_buf = Mutex::new(Vec::<u8>::new());
             let is_tap_subtest = Mutex::new(Option::<bool>::None);
             let recipe_name = self.name();
-            let sink =
-              tap_stream_sink(&stdout_lock, &line_buf, &is_tap_subtest, recipe_name);
+            let sink = tap_stream_sink(&stdout_lock, &line_buf, &is_tap_subtest, recipe_name);
             stream_command_output(cmd, &sink)
           }
           OutputFormat::TapStderr => {
@@ -771,8 +770,7 @@ impl<'src, D> Recipe<'src, D> {
           let line_buf = Mutex::new(Vec::<u8>::new());
           let is_tap_subtest = Mutex::new(Option::<bool>::None);
           let recipe_name = self.name();
-          let sink =
-            tap_stream_sink(&stdout_lock, &line_buf, &is_tap_subtest, recipe_name);
+          let sink = tap_stream_sink(&stdout_lock, &line_buf, &is_tap_subtest, recipe_name);
           stream_command_output(command, &sink)
         }
         OutputFormat::TapStderr => {

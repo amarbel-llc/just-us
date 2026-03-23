@@ -12,9 +12,7 @@ fn single_passing_recipe() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("build")
-    .stdout_regex(
-      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
-    )
+    .stdout_regex("TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -111,9 +109,7 @@ fn output_format_with_env_var() {
     .env("JUST_OUTPUT_FORMAT", "tap")
     .output_format(None)
     .arg("build")
-    .stdout_regex(
-      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
-    )
+    .stdout_regex("TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -264,9 +260,7 @@ fn output_format_justfile_setting() {
     .env("LC_ALL", "C")
     .output_format(None)
     .arg("build")
-    .stdout_regex(
-      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
-    )
+    .stdout_regex("TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -378,9 +372,7 @@ fn tap_no_quiet_overrides_set_quiet() {
     .env("LC_ALL", "C")
     .output_format(None)
     .arg("build")
-    .stdout_regex(
-      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
-    )
+    .stdout_regex("TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -448,9 +440,7 @@ fn tap_stream_stderr_single_recipe() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+stderr"))
     .arg("build")
-    .stdout_regex(
-      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
-    )
+    .stdout_regex("TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n")
     .stderr_regex("hello\n")
     .success();
 }
@@ -483,9 +473,7 @@ fn tap_stream_buffered_explicit() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("build")
-    .stdout_regex(
-      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
-    )
+    .stdout_regex("TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }
@@ -523,9 +511,7 @@ fn tap_stream_cli_overrides_setting() {
     .env("LC_ALL", "C")
     .output_format(Some("tap"))
     .arg("build")
-    .stdout_regex(
-      "TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n",
-    )
+    .stdout_regex("TAP version 14\n1..1\nok 1 - build\n  ---\n  output: \"hello\"\n  \\.\\.\\.\n")
     .stderr("")
     .success();
 }

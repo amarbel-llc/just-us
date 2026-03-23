@@ -61,19 +61,14 @@ impl SignalHandler {
       // these signals to children that opted in via `forward_all`.
       // For children sharing the process group, we do nothing and let
       // the kernel deliver the signal directly.
-      Signal::Hangup | Signal::Interrupt | Signal::Quit =>
-      {
+      Signal::Hangup | Signal::Interrupt | Signal::Quit => {
         #[cfg(not(windows))]
         for (&child, &(_, forward_all)) in &self.children {
           if forward_all {
             if self.verbosity.loquacious() {
               eprintln!("just: sending {signal} to child process {child}");
             }
-            nix::sys::signal::kill(
-              nix::unistd::Pid::from_raw(child),
-              Some(signal.into()),
-            )
-            .ok();
+            nix::sys::signal::kill(nix::unistd::Pid::from_raw(child), Some(signal.into())).ok();
           }
         }
       }
@@ -85,11 +80,7 @@ impl SignalHandler {
           if self.verbosity.loquacious() {
             eprintln!("just: sending {signal} to child process {child}");
           }
-          nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(child),
-            Some(signal.into()),
-          )
-          .ok();
+          nix::sys::signal::kill(nix::unistd::Pid::from_raw(child), Some(signal.into())).ok();
         }
       }
       #[cfg(any(

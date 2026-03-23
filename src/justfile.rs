@@ -505,9 +505,11 @@ impl<'src> Justfile<'src> {
         })
         .filter(|s| !s.is_empty());
 
-      let is_subtest = output
-        .as_ref()
-        .is_some_and(|o| o.lines().next().is_some_and(|l| l.trim() == "TAP version 14"));
+      let is_subtest = output.as_ref().is_some_and(|o| {
+        o.lines()
+          .next()
+          .is_some_and(|l| l.trim() == "TAP version 14")
+      });
 
       let quiet =
         recipe.quiet || (module.settings.quiet && !recipe.no_quiet()) || config.verbosity.quiet();
@@ -524,8 +526,7 @@ impl<'src> Justfile<'src> {
           writeln!(stdout, "    # Subtest: {}", recipe.name())
             .map_err(|io_error| Error::StdoutIo { io_error })?;
           for line in output.lines() {
-            writeln!(stdout, "    {line}")
-              .map_err(|io_error| Error::StdoutIo { io_error })?;
+            writeln!(stdout, "    {line}").map_err(|io_error| Error::StdoutIo { io_error })?;
           }
         }
 

@@ -2,7 +2,7 @@
 # ^ A shebang isn't required, but allows a justfile to be executed
 #   like a script, with `./justfile test`, for example.
 
-default: build test
+default: build test check-fmt
 
 alias t := test
 
@@ -29,8 +29,11 @@ check-completion-scripts:
   cargo test completions::tests::scripts
 
 [group: 'check']
-ci: test clippy build-book forbid
+check-fmt:
   cargo fmt --all -- --check
+
+[group: 'check']
+ci: test clippy build-book forbid check-fmt
   cargo update --locked --package just
 
 [group: 'check']
