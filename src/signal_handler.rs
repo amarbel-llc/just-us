@@ -81,7 +81,7 @@ impl SignalHandler {
       Signal::Terminate =>
       {
         #[cfg(not(windows))]
-        for (&child, _) in &self.children {
+        for &child in self.children.keys() {
           if self.verbosity.loquacious() {
             eprintln!("just: sending {signal} to child process {child}");
           }

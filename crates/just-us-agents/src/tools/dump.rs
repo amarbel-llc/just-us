@@ -47,7 +47,7 @@ impl Tool for DumpJustfileTool {
       justfile,
     )
     .await
-    .map_err(|e| ToolError::ExecutionFailed(e))?;
+    .map_err(ToolError::ExecutionFailed)?;
 
     if !output.success {
       return Ok(ToolResult::error(format!(

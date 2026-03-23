@@ -127,7 +127,7 @@ impl<'src> Attribute<'src> {
           "always-allowed" | "never-allowed" | "per-request" => {}
           _ => {
             return Err(name.error(CompileErrorKind::InvalidAgentsAttributeValue {
-              value: value.cooked.to_string(),
+              value: value.cooked.clone(),
             }));
           }
         }

@@ -2,11 +2,11 @@ use super::*;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy, Serialize)]
 pub(crate) enum OutputFormat {
-  #[default]
-  TapStreamedOutput,
   Default,
   Tap,
   TapStderr,
+  #[default]
+  TapStreamedOutput,
 }
 
 impl std::str::FromStr for OutputFormat {

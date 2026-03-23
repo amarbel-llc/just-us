@@ -231,7 +231,7 @@ impl<'src> Justfile<'src> {
       .unwrap_or_default();
 
     if output_format.is_tap() {
-      return self.run_tap(config, &dotenv, &scopes, search, invocations, output_format);
+      return Self::run_tap(config, &dotenv, &scopes, search, invocations, output_format);
     }
 
     let ran = Ran::default();
@@ -274,7 +274,6 @@ impl<'src> Justfile<'src> {
   }
 
   fn run_tap(
-    &self,
     config: &Config,
     dotenv: &BTreeMap<String, String>,
     scopes: &BTreeMap<String, (&Self, &Scope<'src, '_>)>,

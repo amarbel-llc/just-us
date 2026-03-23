@@ -116,6 +116,10 @@ pub(crate) enum Error<'src> {
     option: Switch,
   },
   FormatCheckFoundDiff,
+  FormatUnknown {
+    format: String,
+    setting: String,
+  },
   FunctionCall {
     function: Name<'src>,
     message: String,
@@ -219,10 +223,6 @@ pub(crate) enum Error<'src> {
   },
   StdoutIo {
     io_error: io::Error,
-  },
-  FormatUnknown {
-    format: String,
-    setting: String,
   },
   TapFailure {
     count: usize,

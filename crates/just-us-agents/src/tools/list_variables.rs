@@ -48,7 +48,7 @@ impl Tool for ListVariablesTool {
       justfile,
     )
     .await
-    .map_err(|e| ToolError::ExecutionFailed(e))?;
+    .map_err(ToolError::ExecutionFailed)?;
 
     if !dump_output.success {
       return Ok(ToolResult::error(format!(
@@ -63,7 +63,7 @@ impl Tool for ListVariablesTool {
     // Get evaluated values
     let eval_output = run_just(&self.just_binary, &["--evaluate"], working_dir, justfile)
       .await
-      .map_err(|e| ToolError::ExecutionFailed(e))?;
+      .map_err(ToolError::ExecutionFailed)?;
 
     let mut evaluated_values: std::collections::HashMap<String, String> =
       std::collections::HashMap::new();

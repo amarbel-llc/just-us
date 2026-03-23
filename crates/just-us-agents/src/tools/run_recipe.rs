@@ -96,7 +96,7 @@ pub(crate) async fn execute_recipe(
 
   let output = run_just(just_binary, &args, working_dir, justfile)
     .await
-    .map_err(|e| ToolError::ExecutionFailed(e))?;
+    .map_err(ToolError::ExecutionFailed)?;
 
   let result = json!({
       "stdout": output.stdout,
