@@ -164,7 +164,11 @@ pub(crate) async fn execute_recipe(
 
   let uri = cache::cache_uri(path_digest, filename);
 
-  let status = if output.success { "succeeded" } else { "failed" };
+  let status = if output.success {
+    "succeeded"
+  } else {
+    "failed"
+  };
   let lines: Vec<&str> = output.stdout.lines().collect();
 
   let first_lines: String = lines
