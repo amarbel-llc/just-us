@@ -209,7 +209,7 @@ JUSTFILE
   validate_tap
 }
 
-function streamed_comments_show_output { # @test
+function streamed_output_uses_output_block { # @test
   write_justfile <<'JUSTFILE'
 build:
   echo line1
@@ -218,8 +218,11 @@ JUSTFILE
 
   run_tap_streamed build
   assert_success
-  assert_line --partial "# line1"
-  assert_line --partial "# line2"
+  # Output Block header: # Output: N - recipe
+  assert_line --partial "# Output: 1 - build"
+  # Body lines use 4-space indent, not # prefix
+  assert_line --partial "    line1"
+  assert_line --partial "    line2"
   validate_tap
 }
 
@@ -793,8 +796,9 @@ JUSTFILE
 
   run_tap_streamed build
   assert_success
-  assert_line --partial "# line1"
-  assert_line --partial "# line2"
-  refute_line --regexp "^# $"
+  assert_line --partial "# Output: 1 - build"
+  assert_line --partial "    line1"
+  assert_line --partial "    line2"
+  refute_line --regexp "^    $"
   validate_tap
 }

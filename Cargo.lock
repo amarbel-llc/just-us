@@ -1845,7 +1845,7 @@ dependencies = [
 [[package]]
 name = "tap-dancer"
 version = "0.1.0"
-source = "git+https://github.com/amarbel-llc/bob#f6273828e5b69d790984f99ed139bf10b47ecbd4"
+source = "git+https://github.com/amarbel-llc/bob#345ceb9b9201a19c9a53d0b90bec8d74087c6eaa"
 dependencies = [
  "fixed_decimal",
  "icu_decimal",

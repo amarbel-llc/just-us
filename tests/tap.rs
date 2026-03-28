@@ -389,7 +389,7 @@ fn tap_stream_comments_single_recipe() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -423,7 +423,7 @@ fn tap_stream_comments_no_output_field() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -492,7 +492,7 @@ fn tap_stream_justfile_setting() {
     .env("LC_ALL", "C")
     .output_format(None)
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -529,7 +529,7 @@ fn tap_stream_env_var() {
     .env("JUST_OUTPUT_FORMAT", "tap+streamed_output")
     .output_format(None)
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -547,7 +547,9 @@ fn tap_stream_comments_multiline() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# line1\n# line2\nok 1 - build\n")
+    .stdout_regex(
+      "TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    line1\n    line2\nok 1 - build\n",
+    )
     .stderr("")
     .success();
 }
@@ -641,7 +643,7 @@ fn tap_stream_streamed_output_canonical_name() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -817,7 +819,9 @@ fn tap_stream_streamed_output_elides_empty_lines() {
     .output_format(Some("tap+streamed_output"))
     .env("LC_ALL", "C")
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# line1\n# line2\nok 1 - build\n")
+    .stdout_regex(
+      "TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    line1\n    line2\nok 1 - build\n",
+    )
     .stderr("")
     .success();
 }
@@ -834,7 +838,7 @@ fn default_output_is_tap_streamed() {
     .output_format(None)
     .env("LC_ALL", "C")
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# hello\nok 1 - build\n")
+    .stdout_regex("TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    hello\nok 1 - build\n")
     .stderr("")
     .success();
 }
@@ -932,7 +936,9 @@ fn tap_streamed_recipe_non_tap_output_unchanged() {
     .env("LC_ALL", "C")
     .output_format(Some("tap+streamed_output"))
     .arg("build")
-    .stdout_regex("TAP version 14\n1\\.\\.1\n# not a TAP document\nok 1 - build\n")
+    .stdout_regex(
+      "TAP version 14\n1\\.\\.1\n# Output: 1 - build\n    not a TAP document\nok 1 - build\n",
+    )
     .stderr("")
     .success();
 }

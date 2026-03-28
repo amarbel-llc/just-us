@@ -478,6 +478,18 @@ impl<'src> Justfile<'src> {
 
     let tap_output_buf = tap.as_ref().map(|_| Mutex::new(Vec::<u8>::new()));
 
+    // For streamed TAP mode, pre-increment the counter so the Output Block
+    // header can reference the correct test point number during streaming.
+    let tap_test_number = if output_format == OutputFormat::TapStreamedOutput {
+      tap.as_ref().map(|t| {
+        let mut t = t.lock().unwrap();
+        t.counter += 1;
+        t.counter
+      })
+    } else {
+      None
+    };
+
     let run_result = recipe.run(
       &context,
       &scope,
@@ -485,11 +497,14 @@ impl<'src> Justfile<'src> {
       is_dependency,
       tap_output_buf.as_ref(),
       output_format,
+      tap_test_number,
     );
 
     if let Some(tap) = tap {
       let mut tap = tap.lock().unwrap();
-      tap.counter += 1;
+      if tap_test_number.is_none() {
+        tap.counter += 1;
+      }
       let number = tap.counter;
 
       let output = tap_output_buf

@@ -5,6 +5,7 @@ fn tap_stream_sink<'a>(
   line_buf: &'a Mutex<Vec<u8>>,
   is_tap_subtest: &'a Mutex<Option<bool>>,
   recipe_name: &'a str,
+  test_point_number: usize,
 ) -> impl Fn(&[u8]) -> io::Result<()> + 'a {
   move |chunk| {
     let mut buf = line_buf.lock().unwrap();
@@ -21,12 +22,13 @@ fn tap_stream_sink<'a>(
             writeln!(stdout, "    # Subtest: {recipe_name}")?;
           } else {
             *is_sub = Some(false);
+            tap_dancer::write_output_header(&mut stdout, test_point_number, recipe_name)?;
           }
         }
         if *is_sub == Some(true) {
           writeln!(stdout, "    {line}")?;
         } else {
-          writeln!(stdout, "# {line}")?;
+          tap_dancer::write_output_line(&mut stdout, line)?;
         }
       }
       buf.drain(..=pos);
@@ -391,6 +393,7 @@ impl<'src, D> Recipe<'src, D> {
     is_dependency: bool,
     tap_output: Option<&Mutex<Vec<u8>>>,
     output_format: OutputFormat,
+    tap_test_number: Option<usize>,
   ) -> RunResult<'src, ()> {
     let color = context.config.color.stderr().banner();
     let prefix = color.prefix();
@@ -416,6 +419,7 @@ impl<'src, D> Recipe<'src, D> {
         evaluator,
         tap_output,
         output_format,
+        tap_test_number,
       )
     } else {
       self.run_linewise(
@@ -425,6 +429,7 @@ impl<'src, D> Recipe<'src, D> {
         evaluator,
         tap_output,
         output_format,
+        tap_test_number,
       )
     }
   }
@@ -437,11 +442,13 @@ impl<'src, D> Recipe<'src, D> {
     mut evaluator: Evaluator<'src, 'run>,
     tap_output: Option<&Mutex<Vec<u8>>>,
     output_format: OutputFormat,
+    tap_test_number: Option<usize>,
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
     let mut lines = self.body.iter().peekable();
     let mut line_number = self.line_number() + 1;
+    let is_tap_subtest = Mutex::new(Option::<bool>::None);
     loop {
       if lines.peek().is_none() {
         return Ok(());
@@ -547,9 +554,14 @@ impl<'src, D> Recipe<'src, D> {
           OutputFormat::TapStreamedOutput => {
             let stdout_lock = io::stdout();
             let line_buf = Mutex::new(Vec::<u8>::new());
-            let is_tap_subtest = Mutex::new(Option::<bool>::None);
             let recipe_name = self.name();
-            let sink = tap_stream_sink(&stdout_lock, &line_buf, &is_tap_subtest, recipe_name);
+            let sink = tap_stream_sink(
+              &stdout_lock,
+              &line_buf,
+              &is_tap_subtest,
+              recipe_name,
+              tap_test_number.unwrap_or(0),
+            );
             stream_command_output(cmd, &sink)
           }
           OutputFormat::TapStderr => {
@@ -647,6 +659,7 @@ impl<'src, D> Recipe<'src, D> {
     mut evaluator: Evaluator<'src, 'run>,
     tap_output: Option<&Mutex<Vec<u8>>>,
     output_format: OutputFormat,
+    tap_test_number: Option<usize>,
   ) -> RunResult<'src, ()> {
     let config = &context.config;
 
@@ -770,7 +783,13 @@ impl<'src, D> Recipe<'src, D> {
           let line_buf = Mutex::new(Vec::<u8>::new());
           let is_tap_subtest = Mutex::new(Option::<bool>::None);
           let recipe_name = self.name();
-          let sink = tap_stream_sink(&stdout_lock, &line_buf, &is_tap_subtest, recipe_name);
+          let sink = tap_stream_sink(
+            &stdout_lock,
+            &line_buf,
+            &is_tap_subtest,
+            recipe_name,
+            tap_test_number.unwrap_or(0),
+          );
           stream_command_output(command, &sink)
         }
         OutputFormat::TapStderr => {
