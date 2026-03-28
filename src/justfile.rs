@@ -521,14 +521,17 @@ impl<'src> Justfile<'src> {
       if is_subtest {
         // In streamed mode, the subtest content was already written to stdout
         // by the streaming closure in recipe.rs, so skip re-emitting it here.
-        if output_format != OutputFormat::TapStreamedOutput {
+        let subtest_output = if output_format != OutputFormat::TapStreamedOutput {
           let output = output.unwrap();
           writeln!(stdout, "    # Subtest: {}", recipe.name())
             .map_err(|io_error| Error::StdoutIo { io_error })?;
           for line in output.lines() {
             writeln!(stdout, "    {line}").map_err(|io_error| Error::StdoutIo { io_error })?;
           }
-        }
+          Some(output)
+        } else {
+          output
+        };
 
         let test_result = match run_result {
           Ok(()) => tap_dancer::TestResult {
@@ -550,7 +553,7 @@ impl<'src> Justfile<'src> {
               directive: comment,
               error_message: Some(format!("{}", error.color_display(Color::never()))),
               exit_code: error.code(),
-              output: None,
+              output: subtest_output,
               suppress_yaml: quiet,
             }
           }

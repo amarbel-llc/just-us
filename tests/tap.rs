@@ -955,7 +955,7 @@ fn tap_recipe_outputting_tap_failing_becomes_subtest() {
     .output_format(Some("tap"))
     .arg("test")
     .stdout_regex(
-      "TAP version 14\n1..1\n    # Subtest: test\n    TAP version 14\n    1..2\n    ok 1 - sub-a\n    not ok 2 - sub-b\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n",
+      "TAP version 14\n1..1\n    # Subtest: test\n    TAP version 14\n    1..2\n    ok 1 - sub-a\n    not ok 2 - sub-b\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  output: [\\s\\S]*\n  \\.\\.\\.\n",
     )
     .stderr("")
     .failure();
@@ -979,7 +979,7 @@ fn tap_streamed_recipe_outputting_tap_failing_becomes_subtest() {
     .output_format(Some("tap+streamed_output"))
     .arg("test")
     .stdout_regex(
-      "TAP version 14\n1\\.\\.1\n    # Subtest: test\n    TAP version 14\n    1\\.\\.2\n    ok 1 - sub-a\n    not ok 2 - sub-b\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  \\.\\.\\.\n",
+      "TAP version 14\n1\\.\\.1\n    # Subtest: test\n    TAP version 14\n    1\\.\\.2\n    ok 1 - sub-a\n    not ok 2 - sub-b\nnot ok 1 - test\n  ---\n  message: \".*\"\n  severity: fail\n  exitcode: 1\n  output: [\\s\\S]*\n  \\.\\.\\.\n",
     )
     .stderr("")
     .failure();

@@ -747,6 +747,26 @@ JUSTFILE
 
 # --- Empty line filtering (#6) ---
 
+# --- Nested just-me invocation (issue #9) ---
+
+function nested_failure_outer_yaml_includes_output { # @test
+  # Recipe produces TAP with a failure. The outer YAML diagnostic
+  # for the failed recipe must include an output: field with the
+  # subprocess content, same as non-TAP recipe failures do.
+  write_justfile <<'JUSTFILE'
+test:
+  @printf 'TAP version 14\n1..2\nok 1 - sub-a\nnot ok 2 - sub-b\n' && exit 1
+JUSTFILE
+
+  run_tap test
+  assert_failure
+  # Subtest content is present (this already works)
+  assert_line --partial "not ok 2 - sub-b"
+  assert_line --partial "not ok 1 - test"
+  # The outer YAML diagnostic must include the inner output
+  assert_line --partial "output:"
+}
+
 function buffered_empty_lines_filtered { # @test
   write_justfile <<'JUSTFILE'
 build:
