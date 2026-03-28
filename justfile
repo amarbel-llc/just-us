@@ -19,6 +19,14 @@ test: check-completion-scripts
   cargo test --all
 
 [group: 'test']
+test-agents: build-agents
+  cargo test -p just-us-agents
+
+[group: 'misc']
+build-agents:
+  cargo build -p just-us-agents
+
+[group: 'test']
 test-bats: build
   ln -sf just target/debug/just-me
   just zz-tests_bats/test --bin-dir target/debug
