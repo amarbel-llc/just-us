@@ -32,7 +32,6 @@ build-agents:
 
 [group: 'test']
 test-bats: build
-  ln -sf just target/debug/just-me
   just zz-tests_bats/test --bin-dir target/debug
 
 # verify checked-in completion scripts match generated output
