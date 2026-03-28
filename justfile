@@ -2,7 +2,7 @@
 # ^ A shebang isn't required, but allows a justfile to be executed
 #   like a script, with `./justfile test`, for example.
 
-default: build test check-fmt
+default: build build-nix test check-fmt
 
 alias t := test
 
@@ -63,6 +63,10 @@ filter PATTERN:
 [group: 'misc']
 build:
   cargo build
+
+[group: 'misc']
+build-nix:
+  nix build --show-trace
 
 [group: 'misc']
 fmt:

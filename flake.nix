@@ -138,9 +138,6 @@
               just
               just-us-agents
             ];
-            postBuild = ''
-              ln -s $out/bin/just $out/bin/just-me
-            '';
           };
           just = just;
           just-us-agents = just-us-agents;
