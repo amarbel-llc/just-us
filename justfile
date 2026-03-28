@@ -24,7 +24,7 @@ test-agents: build-agents test-agents-bats
 
 [group: 'test']
 test-agents-bats: build-agents
-  just zz-tests_bats/test mcp_result_cache.bats --bin-dir target/debug
+  JUST_US_AGENTS_BIN={{justfile_directory()}}/target/debug/just-us-agents just zz-tests_bats/test-targets mcp_result_cache.bats mcp_progress.bats
 
 [group: 'misc']
 build-agents:
