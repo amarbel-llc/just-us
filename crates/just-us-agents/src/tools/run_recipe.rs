@@ -1,5 +1,6 @@
 use crate::cache::{self, ResultCache};
 use crate::helpers::run_just;
+use crate::progress::extract_progress_sender;
 use async_trait::async_trait;
 use mcp_server::{Context, Tool, ToolError, ToolResult};
 use serde_json::{json, Value};
@@ -50,11 +51,15 @@ pub(crate) async fn execute_recipe(
   just_binary: &str,
   arguments: &Value,
   result_cache: &ResultCache,
+  ctx: &Context,
 ) -> Result<ToolResult, ToolError> {
   let recipe = arguments
     .get("recipe")
     .and_then(|v| v.as_str())
     .ok_or_else(|| ToolError::InvalidArguments("recipe is required".into()))?;
+
+  let progress = extract_progress_sender(ctx);
+  let token = format!("just-{recipe}");
 
   let working_dir = arguments.get("working_directory").and_then(|v| v.as_str());
   let justfile = arguments.get("justfile").and_then(|v| v.as_str());
@@ -100,9 +105,24 @@ pub(crate) async fn execute_recipe(
   let arg_refs: Vec<&str> = recipe_args.iter().map(|s| s.as_str()).collect();
   args.extend(&arg_refs);
 
+  if let Some(ref p) = progress {
+    p.send_progress(&token, 0, Some(2), &format!("Running recipe `{recipe}`..."))
+      .await;
+  }
+
   let output = run_just(just_binary, &args, working_dir, justfile)
     .await
     .map_err(ToolError::ExecutionFailed)?;
+
+  if let Some(ref p) = progress {
+    p.send_progress(
+      &token,
+      1,
+      Some(2),
+      &format!("Recipe `{recipe}` finished, processing output..."),
+    )
+    .await;
+  }
 
   let full_output = json!({
       "stdout": output.stdout,
@@ -199,7 +219,7 @@ impl Tool for RunRecipeTool {
     recipe_input_schema()
   }
 
-  async fn execute(&self, arguments: Value, _ctx: &Context) -> Result<ToolResult, ToolError> {
+  async fn execute(&self, arguments: Value, ctx: &Context) -> Result<ToolResult, ToolError> {
     let recipe = arguments
       .get("recipe")
       .and_then(|v| v.as_str())
@@ -226,6 +246,6 @@ impl Tool for RunRecipeTool {
       _ => {}
     }
 
-    execute_recipe(&self.just_binary, &arguments, &self.cache).await
+    execute_recipe(&self.just_binary, &arguments, &self.cache, ctx).await
   }
 }

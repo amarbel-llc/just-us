@@ -25,7 +25,7 @@ impl Tool for RunRecipeRequestTool {
     recipe_input_schema()
   }
 
-  async fn execute(&self, arguments: Value, _ctx: &Context) -> Result<ToolResult, ToolError> {
+  async fn execute(&self, arguments: Value, ctx: &Context) -> Result<ToolResult, ToolError> {
     let recipe = arguments
       .get("recipe")
       .and_then(|v| v.as_str())
@@ -50,6 +50,6 @@ impl Tool for RunRecipeRequestTool {
       _ => {}
     }
 
-    execute_recipe(&self.just_binary, &arguments, &self.cache).await
+    execute_recipe(&self.just_binary, &arguments, &self.cache, ctx).await
   }
 }
