@@ -10,7 +10,7 @@ pub struct ListVariablesTool {
 #[async_trait]
 impl Tool for ListVariablesTool {
   fn name(&self) -> &str {
-    "list_variables"
+    "list-variables"
   }
 
   fn description(&self) -> &str {

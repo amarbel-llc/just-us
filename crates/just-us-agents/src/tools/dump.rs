@@ -10,7 +10,7 @@ pub struct DumpJustfileTool {
 #[async_trait]
 impl Tool for DumpJustfileTool {
   fn name(&self) -> &str {
-    "dump_justfile"
+    "dump-justfile"
   }
 
   fn description(&self) -> &str {

@@ -19,8 +19,12 @@ test: check-completion-scripts
   cargo test --all
 
 [group: 'test']
-test-agents: build-agents
+test-agents: build-agents test-agents-bats
   cargo test -p just-us-agents
+
+[group: 'test']
+test-agents-bats: build-agents
+  just zz-tests_bats/test mcp_result_cache.bats --bin-dir target/debug
 
 [group: 'misc']
 build-agents:

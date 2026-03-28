@@ -1,21 +1,24 @@
+use crate::cache::ResultCache;
 use crate::helpers::get_agent_permission;
 use crate::tools::run_recipe::{execute_recipe, recipe_input_schema};
 use async_trait::async_trait;
 use mcp_server::{Context, Tool, ToolError, ToolResult};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub struct RunRecipeRequestTool {
   pub just_binary: String,
+  pub cache: Arc<ResultCache>,
 }
 
 #[async_trait]
 impl Tool for RunRecipeRequestTool {
   fn name(&self) -> &str {
-    "run_recipe_request"
+    "run-recipe-request"
   }
 
   fn description(&self) -> &str {
-    "Execute a per-request recipe that requires user confirmation. For always-allowed recipes, use `run_recipe` instead."
+    "Execute a per-request recipe that requires user confirmation. For always-allowed recipes, use `run-recipe` instead."
   }
 
   fn input_schema(&self) -> Value {
@@ -47,6 +50,6 @@ impl Tool for RunRecipeRequestTool {
       _ => {}
     }
 
-    execute_recipe(&self.just_binary, &arguments).await
+    execute_recipe(&self.just_binary, &arguments, &self.cache).await
   }
 }

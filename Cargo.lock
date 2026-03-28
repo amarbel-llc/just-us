@@ -1143,7 +1143,9 @@ version = "0.1.0"
 dependencies = [
  "async-graphql",
  "async-trait",
+ "blake3",
  "clap",
+ "dirs",
  "mcp-server",
  "serde",
  "serde_json",

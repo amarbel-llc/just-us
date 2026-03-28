@@ -10,7 +10,7 @@ pub struct ListRecipesTool {
 #[async_trait]
 impl Tool for ListRecipesTool {
   fn name(&self) -> &str {
-    "list_recipes"
+    "list-recipes"
   }
 
   fn description(&self) -> &str {

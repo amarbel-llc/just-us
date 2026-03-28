@@ -1,7 +1,12 @@
+use crate::cache::{self, ResultCache};
 use crate::helpers::run_just;
 use async_trait::async_trait;
 use mcp_server::{Context, Tool, ToolError, ToolResult};
 use serde_json::{json, Value};
+use std::sync::Arc;
+
+const INLINE_THRESHOLD: usize = 50;
+const SUMMARY_LINES: usize = 5;
 
 pub(crate) fn recipe_input_schema() -> Value {
   json!({
@@ -44,6 +49,7 @@ pub(crate) fn recipe_input_schema() -> Value {
 pub(crate) async fn execute_recipe(
   just_binary: &str,
   arguments: &Value,
+  result_cache: &ResultCache,
 ) -> Result<ToolResult, ToolError> {
   let recipe = arguments
     .get("recipe")
@@ -98,30 +104,91 @@ pub(crate) async fn execute_recipe(
     .await
     .map_err(ToolError::ExecutionFailed)?;
 
-  let result = json!({
+  let full_output = json!({
       "stdout": output.stdout,
       "stderr": output.stderr,
       "success": output.success,
   });
 
-  let result_text = serde_json::to_string_pretty(&result)
+  let full_text = serde_json::to_string_pretty(&full_output)
     .unwrap_or_else(|_| format!("stdout: {}\nstderr: {}", output.stdout, output.stderr));
 
-  if output.success {
-    Ok(ToolResult::text(result_text))
-  } else {
-    Ok(ToolResult::error(result_text))
+  let line_count = output.stdout.lines().count();
+
+  if line_count < INLINE_THRESHOLD {
+    if output.success {
+      return Ok(ToolResult::text(full_text));
+    } else {
+      return Ok(ToolResult::error(full_text));
+    }
   }
+
+  // Long output: store in cache, return summary + resource link
+  let git_commit = cache::git_commit_short(working_dir).await;
+  let cache_path = result_cache.cache_path(working_dir, justfile, &git_commit, &args);
+
+  result_cache
+    .store(&cache_path, &full_text)
+    .map_err(|e| ToolError::ExecutionFailed(format!("failed to cache result: {e}")))?;
+
+  let path_digest = cache_path
+    .parent()
+    .and_then(|p| p.file_name())
+    .and_then(|n| n.to_str())
+    .unwrap_or("unknown");
+
+  let filename = cache_path
+    .file_name()
+    .and_then(|n| n.to_str())
+    .unwrap_or("unknown");
+
+  let uri = cache::cache_uri(path_digest, filename);
+
+  let status = if output.success { "succeeded" } else { "failed" };
+  let lines: Vec<&str> = output.stdout.lines().collect();
+
+  let first_lines: String = lines
+    .iter()
+    .take(SUMMARY_LINES)
+    .copied()
+    .collect::<Vec<_>>()
+    .join("\n");
+
+  let last_lines: String = lines
+    .iter()
+    .rev()
+    .take(SUMMARY_LINES)
+    .rev()
+    .copied()
+    .collect::<Vec<_>>()
+    .join("\n");
+
+  let summary = format!(
+    "Recipe `{recipe}` {status} ({line_count} lines).\n\
+     First {n} lines:\n{first_lines}\n\n\
+     Last {n} lines:\n{last_lines}\n\n\
+     Full output: {uri}",
+    n = SUMMARY_LINES,
+  );
+
+  let result = if output.success {
+    ToolResult::text(summary)
+  } else {
+    ToolResult::error(summary)
+  };
+
+  Ok(result)
 }
 
 pub struct RunRecipeTool {
   pub just_binary: String,
+  pub cache: Arc<ResultCache>,
 }
 
 #[async_trait]
 impl Tool for RunRecipeTool {
   fn name(&self) -> &str {
-    "run_recipe"
+    "run-recipe"
   }
 
   fn description(&self) -> &str {
@@ -153,12 +220,12 @@ impl Tool for RunRecipeTool {
       "per-request" => {
         return Ok(ToolResult::error(format!(
           "Recipe `{recipe}` requires user confirmation (agents attribute is `per-request`). \
-                     Use `run_recipe_request` to execute per-request recipes."
+                     Use `run-recipe-request` to execute per-request recipes."
         )));
       }
       _ => {}
     }
 
-    execute_recipe(&self.just_binary, &arguments).await
+    execute_recipe(&self.just_binary, &arguments, &self.cache).await
   }
 }

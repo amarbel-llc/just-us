@@ -1,9 +1,14 @@
+mod cache;
 mod graphql;
 mod helpers;
+mod resources;
 mod tools;
 
+use cache::ResultCache;
 use clap::{Parser, Subcommand};
 use mcp_server::McpServer;
+use resources::ResultResource;
+use std::sync::Arc;
 use tools::{
   DumpJustfileTool, ListRecipesTool, ListVariablesTool, RunRecipeRequestTool, RunRecipeTool,
   ShowRecipeTool,
@@ -40,7 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_mcp_server(just_binary: String) -> Result<(), Box<dyn std::error::Error>> {
-  let server = McpServer::builder("just-us-agents", env!("CARGO_PKG_VERSION"))
+  let cache = Arc::new(ResultCache::new()?);
+
+  let server = McpServer::builder("just", env!("CARGO_PKG_VERSION"))
     .with_tool(ListRecipesTool {
       just_binary: just_binary.clone(),
     })
@@ -49,16 +56,22 @@ async fn run_mcp_server(just_binary: String) -> Result<(), Box<dyn std::error::E
     })
     .with_tool(RunRecipeTool {
       just_binary: just_binary.clone(),
+      cache: cache.clone(),
     })
     .with_tool(RunRecipeRequestTool {
       just_binary: just_binary.clone(),
+      cache: cache.clone(),
     })
     .with_tool(ListVariablesTool {
       just_binary: just_binary.clone(),
     })
     .with_tool(DumpJustfileTool { just_binary })
+    .with_resource(ResultResource {
+      cache: cache.clone(),
+    })
     .build();
 
   server.run_stdio().await?;
+  cache.cleanup()?;
   Ok(())
 }
