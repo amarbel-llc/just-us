@@ -166,6 +166,31 @@ type FunctionResult = Result<String, String>;
 type RunResult<'a, T = ()> = Result<T, Error<'a>>;
 type SearchResult<T> = Result<T, SearchError>;
 
+/// Returns true if `line` is visually empty after stripping ANSI escape
+/// sequences and whitespace. Lines that contain only cursor-movement or
+/// erase sequences (e.g. `\x1b[2K\x1b[1G`) render as blank in a terminal
+/// but pass a naive `trim().is_empty()` check.
+pub(crate) fn is_visually_empty(line: &str) -> bool {
+  let mut chars = line.chars();
+  while let Some(c) = chars.next() {
+    if c == '\x1b' {
+      // Skip ESC + next char; if CSI (`[`), consume until final byte
+      if let Some(next) = chars.next() {
+        if next == '[' {
+          for c in chars.by_ref() {
+            if c.is_ascii_alphabetic() {
+              break;
+            }
+          }
+        }
+      }
+    } else if !c.is_whitespace() {
+      return false;
+    }
+  }
+  true
+}
+
 #[cfg(test)]
 #[macro_use]
 pub mod testing;

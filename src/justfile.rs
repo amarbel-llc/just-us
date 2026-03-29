@@ -514,7 +514,7 @@ impl<'src> Justfile<'src> {
           raw
             .lines()
             .map(|line| line.trim_end_matches('\r'))
-            .filter(|line| !line.trim().is_empty())
+            .filter(|line| !is_visually_empty(line))
             .collect::<Vec<_>>()
             .join("\n")
         })

@@ -14,7 +14,7 @@ fn tap_stream_sink<'a>(
     while let Some(pos) = buf.iter().position(|&b| b == b'\n' || b == b'\r') {
       let line = String::from_utf8_lossy(&buf[..pos]);
       let line = line.trim_end();
-      if !line.trim().is_empty() {
+      if !is_visually_empty(line) {
         let mut is_sub = is_tap_subtest.lock().unwrap();
         if is_sub.is_none() {
           if line == "TAP version 14" {

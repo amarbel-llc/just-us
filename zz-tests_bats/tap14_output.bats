@@ -863,3 +863,36 @@ JUSTFILE
   refute_line --regexp "^    $"
   validate_tap
 }
+
+function streamed_ansi_only_lines_filtered { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo line1
+  printf '\033[2K\033[1G'
+  echo line2
+JUSTFILE
+
+  run_tap_streamed build
+  assert_success
+  assert_line --partial "    line1"
+  assert_line --partial "    line2"
+  refute_line --regexp "^    $"
+  validate_tap
+}
+
+function buffered_ansi_only_lines_filtered { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo line1
+  printf '\033[2K\033[1G'
+  echo line2
+  exit 1
+JUSTFILE
+
+  run_tap build
+  assert_failure
+  assert_line --partial "    line1"
+  assert_line --partial "    line2"
+  refute_line --regexp "^    $"
+  validate_tap
+}
