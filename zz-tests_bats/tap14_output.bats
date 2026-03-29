@@ -802,3 +802,64 @@ JUSTFILE
   refute_line --regexp "^    $"
   validate_tap
 }
+
+function buffered_failed_yaml_output_no_empty_lines { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo line1
+  echo ''
+  echo line2
+  exit 1
+JUSTFILE
+
+  run_tap build
+  assert_failure
+  assert_line --partial "output: |"
+  assert_line --partial "    line1"
+  assert_line --partial "    line2"
+  refute_line --regexp "^    $"
+  validate_tap
+}
+
+function streamed_no_empty_line_before_test_point { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo line1
+  echo ''
+  echo line2
+JUSTFILE
+
+  run_tap_streamed build
+  assert_success
+
+  # After the last output line, the next line must be the test point —
+  # no blank/whitespace-only line in between.
+  local found_line2=false
+  for line in "${lines[@]}"; do
+    if "$found_line2"; then
+      [[ "$line" =~ ^ok\ [0-9] ]] || [[ "$line" =~ ^not\ ok\ [0-9] ]] || \
+        { echo "expected test point after last output line, got: '$line'"; return 1; }
+      break
+    fi
+    [[ "$line" == *"    line2"* ]] && found_line2=true
+  done
+  validate_tap
+}
+
+function streamed_failed_yaml_output_no_empty_lines { # @test
+  write_justfile <<'JUSTFILE'
+build:
+  echo line1
+  echo ''
+  echo line2
+  exit 1
+JUSTFILE
+
+  run_tap_streamed -v build
+  assert_failure
+  assert_line --partial "output: |"
+  assert_line --partial "    line1"
+  assert_line --partial "    line2"
+  refute_line --regexp "^    $"
+  validate_tap
+}
