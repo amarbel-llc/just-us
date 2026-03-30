@@ -3,7 +3,7 @@ use crate::helpers::run_just;
 use crate::progress::extract_progress_sender;
 use async_trait::async_trait;
 use mcp_server::{Context, Tool, ToolError, ToolResult};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 const INLINE_THRESHOLD: usize = 50;
@@ -238,8 +238,8 @@ impl Tool for RunRecipeTool {
     match permission.as_str() {
       "never-allowed" => {
         return Ok(ToolResult::error(format!(
-                    "Recipe `{recipe}` has attribute `[agents(\"never-allowed\")]` and cannot be run by agents"
-                )));
+          "Recipe `{recipe}` has attribute `[agents(\"never-allowed\")]` and cannot be run by agents"
+        )));
       }
       "per-request" => {
         return Ok(ToolResult::error(format!(

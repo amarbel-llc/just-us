@@ -116,8 +116,8 @@ pub(crate) use {
   rand::seq::IndexedRandom,
   regex::Regex,
   serde::{
-    ser::{SerializeMap, SerializeSeq},
     Deserialize, Serialize, Serializer,
+    ser::{SerializeMap, SerializeSeq},
   },
   snafu::{ResultExt, Snafu},
   std::{

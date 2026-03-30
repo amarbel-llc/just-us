@@ -39,8 +39,8 @@ impl Tool for RunRecipeRequestTool {
     match permission.as_str() {
       "never-allowed" => {
         return Ok(ToolResult::error(format!(
-                    "Recipe `{recipe}` has attribute `[agents(\"never-allowed\")]` and cannot be run by agents"
-                )));
+          "Recipe `{recipe}` has attribute `[agents(\"never-allowed\")]` and cannot be run by agents"
+        )));
       }
       "always-allowed" => {
         return Ok(ToolResult::error(format!(

@@ -9,11 +9,11 @@ use cache::ResultCache;
 use clap::{Parser, Subcommand};
 use mcp_server::protocol::ClientCapabilities;
 use mcp_server::{Context, McpServer};
-use progress::{store_progress_sender, ProgressSender};
+use progress::{ProgressSender, store_progress_sender};
 use resources::ResultResource;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tools::{
   DumpJustfileTool, ListRecipesTool, ListVariablesTool, RunRecipeRequestTool, RunRecipeTool,
   ShowRecipeTool,

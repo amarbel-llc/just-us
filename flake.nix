@@ -144,6 +144,7 @@
             pkgs-master.cargo-edit
             pkgs-master.cargo-watch
             pkgs-master.rust-analyzer
+            pkgs.bashInteractive
             pkgs.openssl
             pkgs.pkg-config
             pkgs.just

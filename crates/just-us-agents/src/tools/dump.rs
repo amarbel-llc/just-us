@@ -1,7 +1,7 @@
 use crate::helpers::run_just;
 use async_trait::async_trait;
 use mcp_server::{Context, Tool, ToolError, ToolResult};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub struct DumpJustfileTool {
   pub just_binary: String,

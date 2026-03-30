@@ -1,7 +1,7 @@
-use crate::cache::{parse_cache_uri, ResultCache};
+use crate::cache::{ResultCache, parse_cache_uri};
 use async_trait::async_trait;
-use mcp_server::resources::{Resource, ResourceContent, ResourceError};
 use mcp_server::Context;
+use mcp_server::resources::{Resource, ResourceContent, ResourceError};
 use std::sync::Arc;
 
 pub struct ResultResource {
