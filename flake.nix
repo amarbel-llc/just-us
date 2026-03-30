@@ -2,20 +2,14 @@
   description = "just - a command runner";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/3e20095fe3c6cbb1ddcef89b26969a69a1570776";
-    nixpkgs-master.url = "github:NixOS/nixpkgs/e034e386767a6d00b65ac951821835bd977a08f7";
+    nixpkgs.url = "github:NixOS/nixpkgs/4590696c8693fea477850fe379a01544293ca4e2";
+    nixpkgs-master.url = "github:NixOS/nixpkgs/e2dde111aea2c0699531dc616112a96cd55ab8b5";
     utils.url = "https://flakehub.com/f/numtide/flake-utils/0.1.102";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
-    rust = {
-      url = "github:amarbel-llc/purse-first?dir=devenvs/rust";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.nixpkgs-master.follows = "nixpkgs-master";
-      inputs.utils.follows = "utils";
-    };
     purse-first.url = "github:amarbel-llc/purse-first";
     bob.url = "github:amarbel-llc/bob";
   };
@@ -28,7 +22,6 @@
       utils,
       rust-overlay,
       crane,
-      rust,
       purse-first,
       bob,
     }:
@@ -37,6 +30,7 @@
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs { inherit system overlays; };
+        pkgs-master = import nixpkgs-master { inherit system; };
 
         rustToolchain = pkgs.rust-bin.stable.latest.default;
         craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
@@ -143,12 +137,19 @@
           just-us-agents = just-us-agents;
         };
 
-        devShells.default = rust.devShells.${system}.default.overrideAttrs (old: {
-          nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
-            pkgs.bashInteractive
+        devShells.default = pkgs-master.mkShell {
+          packages = [
+            rustToolchain
+            pkgs-master.cargo-deny
+            pkgs-master.cargo-edit
+            pkgs-master.cargo-watch
+            pkgs-master.rust-analyzer
+            pkgs.openssl
+            pkgs.pkg-config
+            pkgs.just
             bob.packages.${system}.batman
           ];
-        });
+        };
       }
     );
 }
