@@ -1,8 +1,0 @@
-name = "just-us-agents"
-description = "MCP server for just task runner operations"
-
-[author]
-name = "friedenberg"
-
-[mcp.just-us-agents]
-command = "just-us-agents"

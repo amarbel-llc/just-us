@@ -19,18 +19,6 @@ test: check-completion-scripts
   cargo test --all
 
 [group: 'test']
-test-agents: build-agents test-agents-bats
-  cargo test -p just-us-agents
-
-[group: 'test']
-test-agents-bats: build-agents
-  JUST_US_AGENTS_BIN={{justfile_directory()}}/target/debug/just-us-agents just zz-tests_bats/test-targets mcp_result_cache.bats mcp_progress.bats
-
-[group: 'misc']
-build-agents:
-  cargo build -p just-us-agents
-
-[group: 'test']
 test-bats: build
   just zz-tests_bats/test --bin-dir target/debug
 
