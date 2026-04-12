@@ -1,0 +1,8 @@
+[package]
+name = "generate-man"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+pulldown-cmark = "0.9.1"

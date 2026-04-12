@@ -85,6 +85,16 @@ man:
 view-man: man
   man man/just.1
 
+[group: 'doc']
+man-rich:
+  mkdir -p man
+  cargo run --bin just -- --man > man/just.1
+  cargo run --package generate-man -- README.md > man/just-rich.1
+
+[group: 'doc']
+view-man-rich: man-rich
+  man man/just-rich.1
+
 # add git log messages to changelog
 [group: 'release']
 update-changelog:
