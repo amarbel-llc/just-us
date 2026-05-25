@@ -39,6 +39,7 @@ pub(crate) use {
     error::Error,
     evaluate_format::EvaluateFormat,
     evaluator::Evaluator,
+    event::{Event, EventSink, OutputDataFormat, OutputStream},
     execution_context::ExecutionContext,
     executor::Executor,
     expression::Expression,
@@ -232,6 +233,7 @@ mod enclosure;
 mod error;
 mod evaluate_format;
 mod evaluator;
+mod event;
 mod execution_context;
 mod executor;
 mod expression;

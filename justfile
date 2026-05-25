@@ -39,6 +39,10 @@ build:
   cargo lbuild
 
 [group: 'misc']
+build-direct:
+  cargo build
+
+[group: 'misc']
 fmt:
   cargo fmt --all
 
