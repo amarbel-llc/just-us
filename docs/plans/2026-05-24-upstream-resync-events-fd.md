@@ -31,21 +31,54 @@ to a separate tool. Add a small `--events-fd N` feature to upstream
 `just` (or carry as a small fork patch if not accepted) that emits
 structured execution events on a side fd:
 
-- `plan { recipe_count }`
+- `plan { version, recipe_count }`
 - `recipe_start { tp, name, namepath, depth, parent, doc, quiet }`
 - `recipe_command { tp, command, line }`
-- `output { tp, stream, data }`
+- `output { tp, stream, format, data }`
 - `recipe_complete { tp, exit_code, signal, duration_ms }`
 
 When `--events-fd` is set, `just` PTY-spawns children (preserving ANSI
 color), captures their stdout/stderr in chunks, emits `output` events
-with byte-faithful UTF-8-with-U+FFFD-replacement encoding, and
-suppresses passthrough to its own stdout/stderr. The external wrapper
-is the sole presenter.
+with byte-faithful encoding, and suppresses passthrough to its own
+stdout/stderr. The external wrapper is the sole presenter, becoming a
+new `tap-dancer just` subcommand alongside the existing `go-test`,
+`cargo-test`, `exec`, and `format-ndjson` subcommands.
 
 Wire-format details live in `docs/rfcs/0002-just-events-fd-stream.md`
 in this PR. That RFC is the contract `just` exposes; it will move to
 `amarbel-llc/tap/docs/rfcs/0002-...` once finalized.
+
+## Design choice: `--events-fd` vs alternatives
+
+The flag name and transport choice are informed by prior art in
+build/test tooling that emits machine-readable observation streams.
+Three patterns dominate:
+
+1. **stdout NDJSON** — Cargo's `--message-format=json` writes
+   one-event-per-line JSON on stdout. Simple but collides with normal
+   tool output; requires `--quiet` and prevents stdout passthrough.
+2. **File path** — Bazel's `--build_event_json_file=PATH` writes the
+   stream to a named file. Works for offline analysis but adds path
+   management (collision, stale files, cleanup) and is awkward for
+   live consumption.
+3. **Inherited file descriptor** — GDB's MI interface, journald's
+   `sd_notify`-style fd passing, `inotifywait -o /dev/fd/3`, and the
+   bash `coproc` pattern all use pre-opened fds inherited from the
+   parent. No path management, naturally inherits process lifecycle,
+   live-streamable.
+
+The fd approach (option 3) is the right fit here because:
+
+- The wrapper (`tap-dancer just`) always spawns `just`, so an
+  inherited fd is trivial to provide.
+- Stdout is reserved for the wrapper's TAP-14 output, not contended.
+- No file lifecycle bookkeeping.
+
+Alternative flag names considered: `--events-file PATH` (file-based),
+`--json-events` (stdout, collides), `--observe-fd N`, `--telemetry-fd N`.
+`--events-fd` is the most accurate description of what the flag does
+without overclaiming scope (the events are recipe-execution events,
+not arbitrary telemetry).
 
 ## Why this is the right move
 
@@ -60,7 +93,7 @@ in this PR. That RFC is the contract `just` exposes; it will move to
    rejected, the carry cost is minimal.
 3. **Presentation lives outside `just` in `amarbel-llc/tap`**, where it
    can iterate on its own release cycle independent of upstream. The
-   `tap-just` wrapper joins `tap-dancer`'s existing tooling (`go-test`,
+   `tap-dancer just` subcommand joins existing tooling (`go-test`,
    `cargo-test`, `exec`, `format-ndjson`) as another converter.
 4. **Multiple consumers are possible** from a single event stream
    (TAP-14, structured logs, CI dashboards, build telemetry, AI agent
@@ -97,7 +130,7 @@ in this PR. That RFC is the contract `just` exposes; it will move to
 
 ## Trade-offs vs the current fork
 
-| Capability | Current fork | After |
+| Capability | Current fork |#After |
 |---|---|---|
 | Live streaming output | Yes (in-process) | Yes (via event stream) |
 | ANSI color preservation | Yes (PTY + YAML) | Yes (PTY + `output` events) |
@@ -106,8 +139,8 @@ in this PR. That RFC is the contract `just` exposes; it will move to
 | Recipe doc comments as test point comments | Yes | Yes (`doc` field on `recipe_start`) |
 | YAML output blocks | Yes (in-process) | Yes (wrapper assembles from `output` events) |
 | Parallel recipe execution | Yes | Yes (wrapper handles interleaved `tp`-tagged events) |
-| `just-me` argv[0] aliasing | Yes | No (wrapper invocation: `tap-just <recipe>`) |
-| Output goes directly to terminal when interactive | Yes | No (wrapper is sole presenter; mid-loss flagged in RFC) |
+| `just-me` argv[0] aliasing | Yes | No (wrapper invocation: `tap-dancer just <recipe>`) |
+| Output goes directly to terminal when interactive | Yes | No (wrapper is sole presenter; loss flagged in RFC) |
 
 ## Phases
 
@@ -137,18 +170,22 @@ Each phase is a separate PR, landed in order.
 
 ### Phase 3 — Wrapper
 
-- Build `tap-just` in `amarbel-llc/tap/go/cmd/tap-just` (or
-  `rust/src/bin/tap-just` if preferred), consuming the event stream
-  and emitting TAP-14 with the same fidelity the in-process fork
-  provided.
-- Document `just ... | tap-just | tap-dancer format-ndjson` as the
-  canonical agent-consumable pipeline.
+- Add a `tap-dancer just` subcommand under
+  `amarbel-llc/tap/go/cmd/tap-dancer/`, analogous to the existing
+  `go-test` and `cargo-test` subcommands.
+- The subcommand spawns `just --events-fd 3 <args>`, reads events on
+  fd 3, and emits TAP-14 to stdout. Supports `--format ndjson` for
+  direct NDJSON emission (skipping the intermediate TAP-14 step),
+  consistent with the existing test-runner subcommands.
+- Document `tap-dancer just <recipe>` as the canonical invocation
+  (and `tap-dancer just <recipe> --format ndjson` for
+  agent-consumable output).
 
 ### Phase 4 — Cleanup
 
-- Once `tap-just` is functional, retire the fork's plan docs under
-  `docs/plans/2026-0[2-3]-*` (they describe the abandoned approach;
-  git history preserves them).
+- Once `tap-dancer just` is functional, retire the fork's plan docs
+  under `docs/plans/2026-0[2-3]-*` (they describe the abandoned
+  approach; git history preserves them).
 - Optional: rename `just-us` → `just` if the fork goes to ~0 delta and
   becomes just a Nix-flake + tooling wrapper. Out of scope here.
 
@@ -167,9 +204,6 @@ Each phase is a separate PR, landed in order.
   draft scopes to recipe execution only; consumers wanting full
   observability would need a v2 extension. Recommend: keep narrow for
   v1, add later if needed.
-- Branch-name convention for `tap-just`: live in `tap` repo's `rust/`
-  or `go/`? Go has the existing `tap-dancer` ecosystem; Rust has
-  better PTY libraries. Recommend: Go side for consistency.
 - If upstream rejects `--events-fd`, do we maintain it as a long-term
   carry or upstream a smaller variant (e.g., `--json-events`
   stdout-mode without PTY capture)? Defer until upstream feedback.
@@ -179,5 +213,9 @@ Each phase is a separate PR, landed in order.
 - RFC 0002 (this PR): `docs/rfcs/0002-just-events-fd-stream.md`
 - RFC 0001 (in `amarbel-llc/tap`): TAP Test-Result NDJSON Schema
 - Upstream v1.51.0: <https://github.com/casey/just/tree/50dd0ab>
+- Cargo `--message-format=json`:
+  <https://doc.rust-lang.org/cargo/reference/external-tools.html>
+- Bazel `--build_event_json_file`:
+  <https://bazel.build/remote/bep>
 - Existing fork plan docs: `docs/plans/2026-0[2-3]-*` (superseded
   by this plan)
