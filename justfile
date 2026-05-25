@@ -16,6 +16,10 @@ watch +args='ltest':
 test:
   cargo ltest --all
 
+[group: 'test']
+test-direct *args='--all':
+  cargo test {{args}}
+
 [group: 'check']
 ci: test clippy build-book forbid
   cargo fmt --all -- --check
