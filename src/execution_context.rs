@@ -4,6 +4,11 @@ use super::*;
 pub(crate) struct ExecutionContext<'src: 'run, 'run> {
   pub(crate) config: &'run Config,
   pub(crate) dotenv: &'run BTreeMap<String, String>,
+  /// Side channel for --events-fd NDJSON emission. Always present;
+  /// a noop sink when --events-fd is unset. Allocation-cost-free in
+  /// the noop case so the hot path can call `events.emit(...)`
+  /// unconditionally.
+  pub(crate) events: &'run EventSink,
   pub(crate) module: &'run Justfile<'src>,
   pub(crate) overrides: &'run HashMap<Number, String>,
   pub(crate) search: &'run Search,

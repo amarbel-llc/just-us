@@ -168,9 +168,17 @@ impl<'src, 'run> Evaluator<'src, 'run> {
   where
     'src: 'run,
   {
+    // Variable-assignment evaluation never emits recipe events. A
+    // `'static` noop sink lets us hand `ExecutionContext` a
+    // `&'run EventSink` without threading the real sink through
+    // `evaluate_assignments` and `evaluate_scopes` — the assignment
+    // path doesn't need it.
+    static NOOP_EVENT_SINK: LazyLock<EventSink> = LazyLock::new(EventSink::noop);
+
     let context = ExecutionContext {
       config,
       dotenv,
+      events: &NOOP_EVENT_SINK,
       module,
       overrides,
       search,

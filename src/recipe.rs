@@ -1,5 +1,49 @@
 use super::*;
 
+/// Capture child stdout/stderr and emit `Output` events instead of
+/// letting them flow to `just`'s own stdio. Used when `--events-fd`
+/// is active, per RFC 0002 §Suppressing Inherited stdout/stderr.
+///
+/// Buffered, not streamed — chunks arrive after the child exits. The
+/// RFC permits this as v1 behavior; live-streaming via PTY is a
+/// follow-up. Signal-aware `status_guard()` is also deferred:
+/// children spawned this way bypass `SignalHandler::spawn_forward_all`
+/// and inherit just's signal handlers via Rust's default behavior.
+/// That's acceptable for the bats activation contract but doesn't
+/// preserve fork's parity yet.
+fn capture_with_events(
+  cmd: &mut Command,
+  events: &EventSink,
+  tp: usize,
+) -> (io::Result<ExitStatus>, Option<Signal>) {
+  cmd.stdout(Stdio::piped());
+  cmd.stderr(Stdio::piped());
+  match cmd.output() {
+    Ok(output) => {
+      if !output.stdout.is_empty() {
+        let data = String::from_utf8_lossy(&output.stdout);
+        events.emit(&Event::Output {
+          tp,
+          stream: OutputStream::Stdout,
+          format: OutputDataFormat::Utf8,
+          data: &data,
+        });
+      }
+      if !output.stderr.is_empty() {
+        let data = String::from_utf8_lossy(&output.stderr);
+        events.emit(&Event::Output {
+          tp,
+          stream: OutputStream::Stderr,
+          format: OutputDataFormat::Utf8,
+          data: &data,
+        });
+      }
+      (Ok(output.status), None)
+    }
+    Err(io_error) => (Err(io_error), None),
+  }
+}
+
 /// A recipe, e.g. `foo: bar baz`
 #[derive(PartialEq, Debug, Clone, Serialize)]
 pub(crate) struct Recipe<'src, D = Dependency<'src>> {
@@ -386,7 +430,16 @@ impl<'src> Recipe<'src> {
         cmd.env(key, value);
       }
 
-      let (result, caught) = cmd.status_guard();
+      // RFC 0002 §Suppressing Inherited stdout/stderr: when
+      // --events-fd is active, capture child output into `output`
+      // events instead of inheriting just's stdio. `tp: 1` is a
+      // placeholder; per-recipe tp assignment lands with
+      // recipe_start/recipe_complete in a followup.
+      let (result, caught) = if context.events.is_active() {
+        capture_with_events(&mut cmd, context.events, 1)
+      } else {
+        cmd.status_guard()
+      };
 
       match result {
         Ok(exit_status) => {
@@ -559,8 +612,12 @@ impl<'src> Recipe<'src> {
       command.env(key, value);
     }
 
-    // run it!
-    let (result, caught) = command.status_guard();
+    // run it! (with events-fd capture path, per RFC 0002)
+    let (result, caught) = if context.events.is_active() {
+      capture_with_events(&mut command, context.events, 1)
+    } else {
+      command.status_guard()
+    };
 
     match result {
       Ok(exit_status) => exit_status.code().map_or_else(

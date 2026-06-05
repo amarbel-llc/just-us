@@ -234,6 +234,7 @@ impl<'src> Justfile<'src> {
           Self::run_recipe(
             &invocation.arguments,
             config,
+            events,
             false,
             overrides,
             &ran,
@@ -433,6 +434,7 @@ impl<'src> Justfile<'src> {
   fn run_recipe(
     arguments: &[Vec<String>],
     config: &Config,
+    events: &EventSink,
     is_dependency: bool,
     overrides: &HashMap<Number, String>,
     ran: &Ran,
@@ -455,6 +457,7 @@ impl<'src> Justfile<'src> {
     let context = ExecutionContext {
       config,
       dotenv,
+      events,
       module,
       overrides,
       search,
@@ -538,13 +541,14 @@ impl<'src> Justfile<'src> {
       evaluated.push((recipe, grouped));
     }
 
+    let events = context.events;
     if recipe.is_parallel() {
       thread::scope::<_, RunResult>(|thread_scope| {
         let mut handles = Vec::new();
         for (recipe, arguments) in evaluated {
           handles.push(thread_scope.spawn(move || {
             Self::run_recipe(
-              &arguments, config, true, overrides, ran, recipe, scopes, search,
+              &arguments, config, events, true, overrides, ran, recipe, scopes, search,
             )
           }));
         }
@@ -558,7 +562,7 @@ impl<'src> Justfile<'src> {
     } else {
       for (recipe, arguments) in evaluated {
         Self::run_recipe(
-          &arguments, config, true, overrides, ran, recipe, scopes, search,
+          &arguments, config, events, true, overrides, ran, recipe, scopes, search,
         )?;
       }
     }
