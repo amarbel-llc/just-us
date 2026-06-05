@@ -235,6 +235,8 @@ impl<'src> Justfile<'src> {
             &invocation.arguments,
             config,
             events,
+            0,    // depth: top-level invocation
+            None, // parent_tp: top-level has no parent
             false,
             overrides,
             &ran,
@@ -435,6 +437,8 @@ impl<'src> Justfile<'src> {
     arguments: &[Vec<String>],
     config: &Config,
     events: &EventSink,
+    depth: u32,
+    parent_tp: Option<usize>,
     is_dependency: bool,
     overrides: &HashMap<Number, String>,
     ran: &Ran,
@@ -454,6 +458,22 @@ impl<'src> Justfile<'src> {
       .get(recipe.module_path())
       .expect("failed to retrieve scope for module");
 
+    // Assign tp eagerly so child events (recipe_command, output) can
+    // be tagged with this recipe's tp, and so the recipe_start event
+    // can carry it.
+    let tp = events.next_tp();
+    let namepath = recipe.recipe_path().to_string();
+
+    events.emit(&Event::RecipeStart {
+      tp,
+      name: recipe.name(),
+      namepath: &namepath,
+      depth,
+      parent: parent_tp,
+      doc: recipe.doc(),
+      quiet: recipe.quiet,
+    });
+
     let context = ExecutionContext {
       config,
       dotenv,
@@ -461,6 +481,9 @@ impl<'src> Justfile<'src> {
       module,
       overrides,
       search,
+      tp,
+      depth,
+      parent_tp,
     };
 
     let (outer, positional, env) = Evaluator::evaluate_parameters(
@@ -482,31 +505,61 @@ impl<'src> Justfile<'src> {
       });
     }
 
-    Self::run_dependencies(
-      config,
-      &context,
-      recipe.priors(),
-      &mut evaluator,
-      overrides,
-      ran,
-      recipe,
-      scopes,
-      search,
-    )?;
+    let start = Instant::now();
 
-    recipe.run(&context, &env, is_dependency, &positional, &scope)?;
+    let result = (|| -> RunResult<'src> {
+      Self::run_dependencies(
+        config,
+        &context,
+        recipe.priors(),
+        &mut evaluator,
+        overrides,
+        ran,
+        recipe,
+        scopes,
+        search,
+      )?;
 
-    Self::run_dependencies(
-      config,
-      &context,
-      recipe.subsequents(),
-      &mut evaluator,
-      overrides,
-      &Ran::default(),
-      recipe,
-      scopes,
-      search,
-    )?;
+      recipe.run(&context, &env, is_dependency, &positional, &scope)?;
+
+      Self::run_dependencies(
+        config,
+        &context,
+        recipe.subsequents(),
+        &mut evaluator,
+        overrides,
+        &Ran::default(),
+        recipe,
+        scopes,
+        search,
+      )?;
+
+      Ok(())
+    })();
+
+    let duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+    let (exit_code, signal) = match &result {
+      Ok(()) => (Some(0), None),
+      Err(Error::Code { code, .. }) => (Some(*code), None),
+      Err(Error::GuardCode { code, .. }) => (Some(*code), None),
+      // `Error::Signal` carries a raw libc signal number; render it
+      // as `SIG<NUM>`. `Error::Interrupted` carries the typed
+      // `Signal` whose Display already gives `SIGINT`/`SIGTERM`/etc.
+      Err(Error::Signal { signal, .. }) => (None, Some(format!("SIG{signal}"))),
+      Err(Error::Interrupted { signal }) => (None, Some(signal.to_string())),
+      Err(_) => (Some(1), None),
+    };
+    let signal_ref = signal.as_deref();
+
+    events.emit(&Event::RecipeComplete {
+      tp,
+      exit_code,
+      signal: signal_ref,
+      duration_ms,
+    });
+
+    result?;
 
     *guard = true;
 
@@ -542,13 +595,27 @@ impl<'src> Justfile<'src> {
     }
 
     let events = context.events;
+    // Children inherit `depth + 1` and `parent_tp = context.tp` from
+    // the parent recipe's context, per RFC 0002 §Recipe Start Record.
+    let child_depth = context.depth + 1;
+    let child_parent_tp = Some(context.tp);
     if recipe.is_parallel() {
       thread::scope::<_, RunResult>(|thread_scope| {
         let mut handles = Vec::new();
         for (recipe, arguments) in evaluated {
           handles.push(thread_scope.spawn(move || {
             Self::run_recipe(
-              &arguments, config, events, true, overrides, ran, recipe, scopes, search,
+              &arguments,
+              config,
+              events,
+              child_depth,
+              child_parent_tp,
+              true,
+              overrides,
+              ran,
+              recipe,
+              scopes,
+              search,
             )
           }));
         }
@@ -562,7 +629,17 @@ impl<'src> Justfile<'src> {
     } else {
       for (recipe, arguments) in evaluated {
         Self::run_recipe(
-          &arguments, config, events, true, overrides, ran, recipe, scopes, search,
+          &arguments,
+          config,
+          events,
+          child_depth,
+          child_parent_tp,
+          true,
+          overrides,
+          ran,
+          recipe,
+          scopes,
+          search,
         )?;
       }
     }

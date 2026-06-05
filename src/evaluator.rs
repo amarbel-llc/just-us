@@ -182,6 +182,11 @@ impl<'src, 'run> Evaluator<'src, 'run> {
       module,
       overrides,
       search,
+      // Variable-assignment context never emits recipe-tagged events;
+      // these are inert placeholders.
+      tp: 0,
+      depth: 0,
+      parent_tp: None,
     };
 
     let mut evaluator = Self {

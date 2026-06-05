@@ -12,6 +12,20 @@ pub(crate) struct ExecutionContext<'src: 'run, 'run> {
   pub(crate) module: &'run Justfile<'src>,
   pub(crate) overrides: &'run HashMap<Number, String>,
   pub(crate) search: &'run Search,
+  /// Test point number for the recipe currently executing in this
+  /// context. Used to tag `recipe_command` and `output` events. The
+  /// outer `run_recipe` assigns the value via `EventSink::next_tp`
+  /// and constructs the context with it before any child events
+  /// fire.
+  pub(crate) tp: usize,
+  /// Depth in the dependency tree: 0 for recipes invoked directly
+  /// from the command line, 1 for their direct dependencies, and so
+  /// on.
+  pub(crate) depth: u32,
+  /// `tp` of the recipe whose dependencies the current recipe is
+  /// (i.e. the parent in the dep tree), or `None` for top-level
+  /// invocations.
+  pub(crate) parent_tp: Option<usize>,
 }
 
 impl<'src: 'run, 'run> ExecutionContext<'src, 'run> {

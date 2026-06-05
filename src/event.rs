@@ -1,4 +1,7 @@
-use super::*;
+use {
+  super::*,
+  std::sync::atomic::{AtomicUsize, Ordering},
+};
 
 /// One record on the `--events-fd` stream.
 ///
@@ -64,17 +67,33 @@ const SCHEMA_VERSION: u32 = 1;
 /// is not set.
 pub(crate) struct EventSink {
   writer: Option<Mutex<Box<dyn Write + Send>>>,
+  /// Monotonic test-point counter. `next_tp` returns one-based tp
+  /// values; the upper bound matches the `recipe_count` announced
+  /// in the leading `plan` event (per RFC 0002 §Plan Record). Shared
+  /// across threads via atomic — parallel dep execution still gets
+  /// distinct tp values.
+  next_tp: AtomicUsize,
 }
 
 impl EventSink {
   pub(crate) fn noop() -> Self {
-    Self { writer: None }
+    Self {
+      writer: None,
+      next_tp: AtomicUsize::new(0),
+    }
   }
 
   pub(crate) fn from_writer<W: Write + Send + 'static>(writer: W) -> Self {
     Self {
       writer: Some(Mutex::new(Box::new(writer))),
+      next_tp: AtomicUsize::new(0),
     }
+  }
+
+  /// Allocate the next test-point number. Returns a one-based
+  /// integer; the first call returns 1.
+  pub(crate) fn next_tp(&self) -> usize {
+    self.next_tp.fetch_add(1, Ordering::Relaxed) + 1
   }
 
   /// Build an `EventSink` from a `Config`. If `events_fd` is unset,

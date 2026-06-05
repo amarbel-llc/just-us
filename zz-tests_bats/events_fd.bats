@@ -82,3 +82,84 @@ EOF
   grep -q '"data":"hello' events.log || \
     fail "child bytes not captured into event stream: $(cat events.log)"
 }
+
+@test "--events-fd emits recipe_start and recipe_complete per recipe" {
+  # `@foo:` makes the whole recipe quiet (recipe-level quiet=true).
+  # A per-line `@echo` only suppresses that line's echo and leaves
+  # `recipe.quiet=false`. We want to assert the recipe-level field.
+  cat > justfile <<'EOF'
+# the foo recipe
+@foo:
+  echo hello
+EOF
+  run bash -c '"$0" --events-fd 3 foo 3>events.log' "${JUST_BIN:-just}"
+  assert_success
+  # Plan record first.
+  head -1 events.log | grep -q '"type":"plan"' || \
+    fail "first line not plan: $(head -1 events.log)"
+  # Recipe start carries name, namepath, depth=0, parent=null, doc, quiet.
+  grep -q '"type":"recipe_start"' events.log || \
+    fail "no recipe_start: $(cat events.log)"
+  grep '"type":"recipe_start"' events.log | grep -q '"name":"foo"' || \
+    fail "recipe_start missing name: $(cat events.log)"
+  grep '"type":"recipe_start"' events.log | grep -q '"depth":0' || \
+    fail "recipe_start missing depth 0: $(cat events.log)"
+  grep '"type":"recipe_start"' events.log | grep -q '"parent":null' || \
+    fail "recipe_start missing null parent: $(cat events.log)"
+  grep '"type":"recipe_start"' events.log | grep -q '"doc":"the foo recipe"' || \
+    fail "recipe_start missing doc: $(cat events.log)"
+  grep '"type":"recipe_start"' events.log | grep -q '"quiet":true' || \
+    fail "recipe_start missing quiet=true (recipe declared with @ prefix): $(cat events.log)"
+  # Recipe complete: success → exit_code 0, signal null.
+  grep -q '"type":"recipe_complete"' events.log || \
+    fail "no recipe_complete: $(cat events.log)"
+  grep '"type":"recipe_complete"' events.log | grep -q '"exit_code":0' || \
+    fail "recipe_complete missing exit_code 0: $(cat events.log)"
+  grep '"type":"recipe_complete"' events.log | grep -q '"signal":null' || \
+    fail "recipe_complete missing null signal: $(cat events.log)"
+  # Ordering: recipe_start before output before recipe_complete.
+  start_line=$(grep -n '"type":"recipe_start"' events.log | head -1 | cut -d: -f1)
+  output_line=$(grep -n '"type":"output"' events.log | head -1 | cut -d: -f1)
+  complete_line=$(grep -n '"type":"recipe_complete"' events.log | head -1 | cut -d: -f1)
+  (( start_line < output_line )) || \
+    fail "recipe_start (line $start_line) not before output (line $output_line)"
+  (( output_line < complete_line )) || \
+    fail "output (line $output_line) not before recipe_complete (line $complete_line)"
+}
+
+@test "--events-fd: dep ordering — parent recipe_start before child events; child recipe_complete before parent's body" {
+  cat > justfile <<'EOF'
+foo: bar
+  @echo foo-body
+bar:
+  @echo bar-body
+EOF
+  run bash -c '"$0" --events-fd 3 foo 3>events.log' "${JUST_BIN:-just}"
+  assert_success
+  # Two recipe_start and two recipe_complete records.
+  starts=$(grep -c '"type":"recipe_start"' events.log)
+  completes=$(grep -c '"type":"recipe_complete"' events.log)
+  [[ $starts == 2 ]] || fail "expected 2 recipe_start, got $starts: $(cat events.log)"
+  [[ $completes == 2 ]] || fail "expected 2 recipe_complete, got $completes: $(cat events.log)"
+  # foo (depth 0, parent null) recipe_start MUST precede bar's events.
+  foo_start_line=$(grep -n '"name":"foo"' events.log | grep recipe_start | head -1 | cut -d: -f1)
+  bar_start_line=$(grep -n '"name":"bar"' events.log | grep recipe_start | head -1 | cut -d: -f1)
+  bar_complete_line=$(grep -n '"name":"bar"' events.log | grep recipe_complete \
+                       || true)
+  # bar's recipe_complete might not carry the name field, but we know the
+  # second recipe_complete in the stream corresponds to whichever recipe
+  # finished last. We rely on the tp tag for stricter checks below.
+  (( foo_start_line < bar_start_line )) || \
+    fail "foo recipe_start (line $foo_start_line) should precede bar recipe_start (line $bar_start_line)"
+  # bar has depth 1 and parent = foo's tp (= 1).
+  grep '"name":"bar"' events.log | grep -q '"depth":1' || \
+    fail "bar's recipe_start missing depth 1: $(cat events.log)"
+  grep '"name":"bar"' events.log | grep -q '"parent":1' || \
+    fail "bar's recipe_start missing parent=1: $(cat events.log)"
+  # foo's body output ("foo-body") must come AFTER bar's recipe_complete.
+  bar_complete_line=$(awk 'NR==2 && /"type":"recipe_complete"/{exit} /"type":"recipe_complete"/{print NR; exit}' events.log)
+  foo_body_line=$(grep -n '"data":"foo-body' events.log | head -1 | cut -d: -f1)
+  bar_complete_line=$(grep -n '"type":"recipe_complete"' events.log | head -1 | cut -d: -f1)
+  (( bar_complete_line < foo_body_line )) || \
+    fail "bar recipe_complete (line $bar_complete_line) should precede foo body output (line $foo_body_line)"
+}

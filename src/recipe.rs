@@ -432,11 +432,11 @@ impl<'src> Recipe<'src> {
 
       // RFC 0002 §Suppressing Inherited stdout/stderr: when
       // --events-fd is active, capture child output into `output`
-      // events instead of inheriting just's stdio. `tp: 1` is a
-      // placeholder; per-recipe tp assignment lands with
-      // recipe_start/recipe_complete in a followup.
+      // events instead of inheriting just's stdio. Output events
+      // are tagged with `context.tp`, the per-recipe test-point
+      // number assigned by `Justfile::run_recipe`.
       let (result, caught) = if context.events.is_active() {
-        capture_with_events(&mut cmd, context.events, 1)
+        capture_with_events(&mut cmd, context.events, context.tp)
       } else {
         cmd.status_guard()
       };
@@ -614,7 +614,7 @@ impl<'src> Recipe<'src> {
 
     // run it! (with events-fd capture path, per RFC 0002)
     let (result, caught) = if context.events.is_active() {
-      capture_with_events(&mut command, context.events, 1)
+      capture_with_events(&mut command, context.events, context.tp)
     } else {
       command.status_guard()
     };
