@@ -85,11 +85,8 @@ impl Subcommand {
 
     // Validate --events-fd (if set) before any recipe could run.
     // RFC 0002 §Activation: invalid fd MUST cause a non-zero exit
-    // before recipe execution begins. The sink is dropped here for
-    // now — plumbing into ExecutionContext + recipe.rs lands in a
-    // followup commit; this gate makes the activation contract
-    // observable to the bats suite.
-    let _events = if let Some(fd) = config.events_fd {
+    // before recipe execution begins.
+    let events = if let Some(fd) = config.events_fd {
       EventSink::from_config(config).map_err(|io_error| Error::EventsFdInvalid { fd, io_error })?
     } else {
       EventSink::noop()
@@ -113,18 +110,19 @@ impl Subcommand {
         Self::choose(
           chooser.as_deref(),
           config,
+          &events,
           justfile,
           &compilation.overrides,
           &search,
         )?;
       }
       Command { .. } | Evaluate { .. } => {
-        justfile.run(config, &search, &[], &compilation.overrides)?;
+        justfile.run(config, &events, &search, &[], &compilation.overrides)?;
       }
       Dump { format } => Self::dump(config, compilation, *format)?,
       Groups => Self::groups(config, justfile),
       List { path } => Self::list(config, justfile, path)?,
-      Run { arguments } => Self::run(config, loader, search, compilation, arguments)?,
+      Run { arguments } => Self::run(config, &events, loader, search, compilation, arguments)?,
       Show { path } => Self::show(config, justfile, path)?,
       Summary => Self::summary(config, justfile),
       Usage { path } => Self::usage(config, justfile, path)?,
@@ -150,6 +148,7 @@ impl Subcommand {
 
   fn run<'src>(
     config: &Config,
+    events: &EventSink,
     loader: &'src Loader,
     mut search: Search,
     mut compilation: Compilation<'src>,
@@ -165,7 +164,7 @@ impl Subcommand {
           SearchConfig::FromInvocationDirectory | SearchConfig::FromSearchDirectory { .. }
         );
 
-      let result = justfile.run(config, &search, arguments, &compilation.overrides);
+      let result = justfile.run(config, events, &search, arguments, &compilation.overrides);
 
       if fallback {
         if let Err(err @ (Error::UnknownRecipe { .. } | Error::UnknownSubmodule { .. })) = result {
@@ -229,6 +228,7 @@ impl Subcommand {
   fn choose<'src>(
     chooser: Option<&Path>,
     config: &Config,
+    events: &EventSink,
     justfile: &Justfile<'src>,
     overrides: &HashMap<Number, String>,
     search: &Search,
@@ -315,7 +315,7 @@ impl Subcommand {
         .map(str::to_owned)
         .collect::<Vec<String>>();
 
-      justfile.run(config, search, &arguments, overrides)?;
+      justfile.run(config, events, search, &arguments, overrides)?;
     }
 
     Ok(())

@@ -167,6 +167,7 @@ impl<'src> Justfile<'src> {
   pub(crate) fn run(
     &self,
     config: &Config,
+    events: &EventSink,
     search: &Search,
     arguments: &[String],
     overrides: &HashMap<Number, String>,
@@ -191,17 +192,29 @@ impl<'src> Justfile<'src> {
         let mut variable_references = HashSet::new();
 
         let mut stack = Vec::new();
+        // Tracks unique recipes for the events-fd Plan event. Counts
+        // each distinct recipe pointer once; this approximates the
+        // recipe_count contract in RFC 0002 §Plan Record without
+        // duplicating Ran's per-(recipe, args) dedup logic.
+        let mut visited = HashSet::new();
 
         for invocation in &invocations {
           stack.push(invocation.recipe);
+          visited.insert(invocation.recipe as *const _);
         }
 
         while let Some(recipe) = stack.pop() {
           variable_references.extend(&recipe.variable_references);
           for dependency in &recipe.dependencies {
-            stack.push(&dependency.recipe);
+            if visited.insert(&*dependency.recipe as *const _) {
+              stack.push(&dependency.recipe);
+            }
           }
         }
+
+        // Emit Plan as the first event on the stream per RFC 0002
+        // §Document Format. Noop sink when --events-fd is unset.
+        events.emit_plan(visited.len());
 
         self.evaluate_scopes(
           config,
