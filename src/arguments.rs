@@ -140,6 +140,16 @@ pub struct Arguments {
   )]
   pub(crate) evaluate_format: EvaluateFormat,
   #[arg(
+    env = "JUST_EVENTS_FD",
+    help = "Emit NDJSON recipe-execution events to <FD>. \
+            See docs/rfcs/0002-just-events-fd-stream.md for the wire \
+            format. <FD> must be a writable file descriptor inherited \
+            from the parent process.",
+    long,
+    value_name = "FD"
+  )]
+  pub(crate) events_fd: Option<i32>,
+  #[arg(
     env = "JUST_EXPLAIN",
     help = "Print recipe doc comment before running it",
     long
