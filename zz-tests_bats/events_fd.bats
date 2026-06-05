@@ -2,8 +2,8 @@
 #
 # Activation contract for --events-fd, per RFC 0002 §Activation.
 # Tests 2-4 are RED until config.rs/run.rs wiring lands; that is
-# intentional — the test suite is the red→green driver for the rest
-# of the implementation.
+# intentional --- the test suite is the red->green driver for the
+# rest of the implementation.
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/common.bash"
@@ -110,7 +110,7 @@ EOF
     fail "recipe_start missing doc: $(cat events.log)"
   grep '"type":"recipe_start"' events.log | grep -q '"quiet":true' || \
     fail "recipe_start missing quiet=true (recipe declared with @ prefix): $(cat events.log)"
-  # Recipe complete: success → exit_code 0, signal null.
+  # Recipe complete: success -> exit_code 0, signal null.
   grep -q '"type":"recipe_complete"' events.log || \
     fail "no recipe_complete: $(cat events.log)"
   grep '"type":"recipe_complete"' events.log | grep -q '"exit_code":0' || \
@@ -138,7 +138,7 @@ EOF
 EOF
   run bash -c '"$0" --events-fd 3 foo 3>events.log' "${JUST_BIN:-just}"
   assert_success
-  # Three recipe_command records — continuation is one logical command.
+  # Three recipe_command records --- continuation is one logical command.
   cmd_count=$(grep -c '"type":"recipe_command"' events.log)
   [[ $cmd_count == 3 ]] || \
     fail "expected 3 recipe_command, got $cmd_count: $(cat events.log)"
@@ -156,7 +156,15 @@ EOF
     fail "recipe_command (line $first_cmd_line) not before output (line $first_output_line)"
 }
 
-@test "--events-fd: dep ordering — parent recipe_start before child events; child recipe_complete before parent's body" {
+@test "ANSI color preservation via PTY (skipped on this branch)" {
+  # PTY allocation reads from master hang under the nix sandbox even
+  # after the child exits. The pipe-based capture used on fast-alder
+  # passes a non-TTY to children, so ANSI-color-aware tools skip
+  # color emission. Tracked as followup #14.
+  skip "PTY hangs in nix sandbox; using pipe capture. See followup #14."
+}
+
+@test "--events-fd dep ordering: parent recipe_start before child events" {
   cat > justfile <<'EOF'
 foo: bar
   @echo foo-body
@@ -173,11 +181,6 @@ EOF
   # foo (depth 0, parent null) recipe_start MUST precede bar's events.
   foo_start_line=$(grep -n '"name":"foo"' events.log | grep recipe_start | head -1 | cut -d: -f1)
   bar_start_line=$(grep -n '"name":"bar"' events.log | grep recipe_start | head -1 | cut -d: -f1)
-  bar_complete_line=$(grep -n '"name":"bar"' events.log | grep recipe_complete \
-                       || true)
-  # bar's recipe_complete might not carry the name field, but we know the
-  # second recipe_complete in the stream corresponds to whichever recipe
-  # finished last. We rely on the tp tag for stricter checks below.
   (( foo_start_line < bar_start_line )) || \
     fail "foo recipe_start (line $foo_start_line) should precede bar recipe_start (line $bar_start_line)"
   # bar has depth 1 and parent = foo's tp (= 1).
@@ -186,7 +189,6 @@ EOF
   grep '"name":"bar"' events.log | grep -q '"parent":1' || \
     fail "bar's recipe_start missing parent=1: $(cat events.log)"
   # foo's body output ("foo-body") must come AFTER bar's recipe_complete.
-  bar_complete_line=$(awk 'NR==2 && /"type":"recipe_complete"/{exit} /"type":"recipe_complete"/{print NR; exit}' events.log)
   foo_body_line=$(grep -n '"data":"foo-body' events.log | head -1 | cut -d: -f1)
   bar_complete_line=$(grep -n '"type":"recipe_complete"' events.log | head -1 | cut -d: -f1)
   (( bar_complete_line < foo_body_line )) || \

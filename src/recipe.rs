@@ -4,13 +4,18 @@ use super::*;
 /// letting them flow to `just`'s own stdio. Used when `--events-fd`
 /// is active, per RFC 0002 §Suppressing Inherited stdout/stderr.
 ///
-/// Buffered, not streamed — chunks arrive after the child exits. The
-/// RFC permits this as v1 behavior; live-streaming via PTY is a
-/// follow-up. Signal-aware `status_guard()` is also deferred:
-/// children spawned this way bypass `SignalHandler::spawn_forward_all`
-/// and inherit just's signal handlers via Rust's default behavior.
-/// That's acceptable for the bats activation contract but doesn't
-/// preserve fork's parity yet.
+/// Buffered, not streamed — chunks arrive after the child exits.
+/// RFC permits this as v1 behavior; PTY-based live streaming is
+/// still followup #14 (the obvious "allocate a PTY and read the
+/// master fd" implementation hangs the bats lane under the nix
+/// sandbox; the slave doesn't drain on child exit in that
+/// environment, and the read blocks forever rather than returning
+/// EIO. Reproduced and reverted on fast-alder; reproduction details
+/// belong in #14's investigation).
+///
+/// Signal integration is also deferred (followup #15): this path
+/// bypasses `SignalHandler::spawn_forward_all`, so SIGINT/SIGHUP/
+/// SIGQUIT to `just` are NOT forwarded to children spawned this way.
 fn capture_with_events(
   cmd: &mut Command,
   events: &EventSink,

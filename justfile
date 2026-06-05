@@ -20,6 +20,24 @@ test:
 test-direct *args='--all':
   cargo test {{args}}
 
+# Authoritative bats lane — nix sandbox, every file_tag.
+[group: 'test']
+test-bats:
+  nix build .#bats-default --no-link --print-build-logs
+
+# Bats lane filtered to a single file_tag.
+[group: 'test']
+test-bats-tags *tags:
+  nix build .#bats-{{tags}} --no-link --print-build-logs
+
+# Fast iteration — runs against the locally-built binary in target/debug.
+# Run `just build-direct` first to populate target/debug/just.
+[group: 'test']
+test-bats-local *targets='*.bats':
+  JUST_BIN=$(realpath ./target/debug/just) \
+    BATS_TEST_TIMEOUT=10 \
+    bats --jobs $(nproc) zz-tests_bats/{{targets}}
+
 [group: 'check']
 ci: test clippy build-book forbid
   cargo fmt --all -- --check
