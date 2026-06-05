@@ -342,6 +342,12 @@ impl<'src> Recipe<'src> {
         return Ok(());
       };
 
+      // Record where this command begins in the source justfile.
+      // The inner continuation loop advances `line_number` past the
+      // final continuation, so we snapshot here before it moves.
+      // For RFC 0002 §Recipe Command Record `line` field.
+      let command_first_line = line_number;
+
       let mut evaluated = String::new();
       let mut continued = false;
 
@@ -376,6 +382,18 @@ impl<'src> Recipe<'src> {
       if command.is_empty() {
         continue;
       }
+
+      // RFC 0002 §Recipe Command Record. Emit BEFORE execution so
+      // event-stream consumers can render "about to run X" UI
+      // without waiting for the command's output. The RFC requires
+      // 1-indexed source line numbers; just's internal `line_number`
+      // is 0-indexed (recipe header tracks `name.line` from the
+      // lexer), so we add 1.
+      context.events.emit(&Event::RecipeCommand {
+        tp: context.tp,
+        command,
+        line: command_first_line + 1,
+      });
 
       let guard = sigils.contains(&Sigil::Guard);
       let infallible = sigils.contains(&Sigil::Infallible);

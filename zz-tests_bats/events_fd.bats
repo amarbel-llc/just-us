@@ -127,6 +127,35 @@ EOF
     fail "output (line $output_line) not before recipe_complete (line $complete_line)"
 }
 
+@test "--events-fd: recipe_command per command line, before execution" {
+  # 3 commands across 4 source lines (one is a continuation).
+  cat > justfile <<'EOF'
+@foo:
+  echo first
+  echo second \
+    continued
+  echo third
+EOF
+  run bash -c '"$0" --events-fd 3 foo 3>events.log' "${JUST_BIN:-just}"
+  assert_success
+  # Three recipe_command records — continuation is one logical command.
+  cmd_count=$(grep -c '"type":"recipe_command"' events.log)
+  [[ $cmd_count == 3 ]] || \
+    fail "expected 3 recipe_command, got $cmd_count: $(cat events.log)"
+  # Line numbers: 2, 3, 5 (recipe header at line 1, continuation occupies lines 3-4).
+  grep '"type":"recipe_command"' events.log | grep -q '"line":2' || \
+    fail "recipe_command missing line 2: $(cat events.log)"
+  grep '"type":"recipe_command"' events.log | grep -q '"line":3' || \
+    fail "recipe_command missing line 3 (multi-line cmd start): $(cat events.log)"
+  grep '"type":"recipe_command"' events.log | grep -q '"line":5' || \
+    fail "recipe_command missing line 5: $(cat events.log)"
+  # Each recipe_command MUST come BEFORE its output. Test the first:
+  first_cmd_line=$(grep -n '"type":"recipe_command"' events.log | head -1 | cut -d: -f1)
+  first_output_line=$(grep -n '"type":"output"' events.log | head -1 | cut -d: -f1)
+  (( first_cmd_line < first_output_line )) || \
+    fail "recipe_command (line $first_cmd_line) not before output (line $first_output_line)"
+}
+
 @test "--events-fd: dep ordering — parent recipe_start before child events; child recipe_complete before parent's body" {
   cat > justfile <<'EOF'
 foo: bar
