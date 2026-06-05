@@ -83,6 +83,18 @@ impl Subcommand {
       _ => {}
     }
 
+    // Validate --events-fd (if set) before any recipe could run.
+    // RFC 0002 §Activation: invalid fd MUST cause a non-zero exit
+    // before recipe execution begins. The sink is dropped here for
+    // now — plumbing into ExecutionContext + recipe.rs lands in a
+    // followup commit; this gate makes the activation contract
+    // observable to the bats suite.
+    let _events = if let Some(fd) = config.events_fd {
+      EventSink::from_config(config).map_err(|io_error| Error::EventsFdInvalid { fd, io_error })?
+    } else {
+      EventSink::noop()
+    };
+
     let search = Search::search(config)?;
 
     if matches!(self, Edit) {

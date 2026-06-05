@@ -103,6 +103,10 @@ pub(crate) enum Error<'src> {
     component: String,
     suggestion: Option<Suggestion<'src>>,
   },
+  EventsFdInvalid {
+    fd: i32,
+    io_error: io::Error,
+  },
   ExcessInvocations {
     invocations: usize,
   },
@@ -589,6 +593,12 @@ impl ColorDisplay for Error<'_> {
         write!(
           f,
           "justfile does not contain variable or submodule `{component}`"
+        )?;
+      }
+      EventsFdInvalid { fd, io_error } => {
+        write!(
+          f,
+          "--events-fd {fd} is not a writable file descriptor: {io_error}"
         )?;
       }
       ExcessInvocations { invocations } => {
