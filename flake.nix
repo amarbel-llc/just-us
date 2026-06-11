@@ -94,6 +94,12 @@
             cargo
             clippy
             rustfmt
+            # The integration suite (choose::default, edit::editor_precedence)
+            # symlinks fake tool names onto `which cat` and runs them; that
+            # breaks when cat is a single-binary coreutils multicall that
+            # dispatches on argv[0]. Pin a separate-binaries coreutils first
+            # in PATH so the symlink trick works.
+            (coreutils.override { singleBinary = false; })
           ];
         };
       }

@@ -20,9 +20,12 @@ watch +args='ltest':
 [group: 'test']
 test: test-direct test-bats
 
+# XDG_CONFIG_HOME is scrubbed because upstream's tests/global.rs unix
+# test isolates HOME but not XDG_CONFIG_HOME, so a real
+# ~/.config/just/justfile leaks in and fails the suite.
 [group: 'test']
 test-direct *args='--all':
-  cargo test {{args}}
+  env -u XDG_CONFIG_HOME cargo test {{args}}
 
 # Authoritative bats lane — nix sandbox, every file_tag.
 [group: 'test']
