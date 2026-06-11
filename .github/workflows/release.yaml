@@ -1,9 +1,12 @@
 name: Release
 
+# Defanged for the just-us fork: upstream's release pipeline is
+# hard-wired to casey/just (checksum download, ghcr.io image, pages
+# deploy) and must not fire on the fork's v* tags. Fork releases are
+# cut by `just release` (gh release create, no artifacts). Kept as
+# workflow_dispatch to ease upstream resyncs.
 on:
-  push:
-    tags:
-    - '*'
+  workflow_dispatch:
 
 defaults:
   run:

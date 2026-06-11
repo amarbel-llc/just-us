@@ -1,6 +1,10 @@
 #!/usr/bin/env -S just --justfile
 # ^ A shebang isn't required, but allows a justfile to be executed
 #   like a script, with `./justfile test`, for example.
+#
+# Structured per eng-design_patterns-justfile(7): verb-noun leaf
+# recipes, body-less aggregates, lifecycle groups. The `demo` group is
+# upstream (casey/just) heritage and is intentionally left as-is.
 
 alias t := test
 
@@ -8,152 +12,231 @@ log := "warn"
 
 export JUST_LOG := log
 
-# CI-equivalent entrypoint (and the spinclass pre-merge lane): if bare
-# `just` passes, the tree is mergeable. Aggregates only, per
-# eng-design_patterns-justfile(7).
-default: build test
+# Flake output system tuple, portable across linux/darwin hosts.
+nix-system := arch() + "-" + if os() == "macos" { "darwin" } else { "linux" }
 
-[group: 'dev']
-watch +args='ltest':
-  cargo watch --clear --exec '{{ args }}'
+# CI-equivalent entrypoint (and the spinclass pre-merge lane), aggregates only:
+# if bare `just` passes, the tree is mergeable
+default: validate build test
 
-[group: 'test']
-test: test-direct test-bats
+# everything CI checks beyond `default`: lints, lockfile freshness, book build
+ci: lint validate-lockfile test build-book
+
+[group: 'pre-build']
+validate: validate-devshell
+
+# Catches flake/devshell breakage that the cargo build can mask. No
+# store output kept (--no-link) --- it's a build-check, not an artifact.
+# verify the devShell evaluates and builds without errors
+[group: 'pre-build']
+validate-devshell:
+  nix build --no-link .#devShells.{{ nix-system }}.default
+
+# verify Cargo.lock is in sync with Cargo.toml
+[group: 'pre-build']
+validate-lockfile:
+  cargo update --locked --package just
+
+[group: 'pre-build']
+lint: lint-clippy lint-fmt lint-forbid lint-shellcheck
+
+# everyone's favorite animate paper clip
+[group: 'pre-build']
+lint-clippy:
+  cargo lclippy --all --all-targets --all-features -- --deny warnings
+
+# Read-only formatting gate; `codemod-fmt` is the modifying twin.
+[group: 'pre-build']
+lint-fmt:
+  cargo fmt --all -- --check
+
+[group: 'pre-build']
+lint-forbid:
+  ./bin/forbid
+
+[group: 'pre-build']
+lint-shellcheck:
+  shellcheck www/install.sh
+
+# Not in the `lint` aggregate: this is upstream-maintenance, not a
+# per-merge gate.
+# check that GitHub Actions pins in the workflows are current
+[group: 'pre-build']
+lint-action-versions:
+  cargo lrun --package action-versions
+
+[group: 'build']
+build: build-cargo
+
+[group: 'build']
+build-cargo:
+  cargo build
+
+[group: 'build']
+build-book:
+  cargo lrun --package generate-book
+  mdbook build book/en
+  mdbook build book/zh
+
+[group: 'build']
+build-man:
+  mkdir -p man
+  cargo lrun -- --man > man/just.1
+
+[group: 'post-build']
+test: test-cargo test-bats
 
 # XDG_CONFIG_HOME is scrubbed because upstream's tests/global.rs unix
 # test isolates HOME but not XDG_CONFIG_HOME, so a real
 # ~/.config/just/justfile leaks in and fails the suite.
-[group: 'test']
-test-direct *args='--all':
+# run the cargo test suite
+[group: 'post-build']
+test-cargo *args='--all':
   env -u XDG_CONFIG_HOME cargo test {{args}}
 
 # Authoritative bats lane — nix sandbox, every file_tag.
-[group: 'test']
+[group: 'post-build']
 test-bats:
   nix build .#bats-default --no-link --print-build-logs
 
 # Bats lane filtered to a single file_tag.
-[group: 'test']
+[group: 'post-build']
 test-bats-tags *tags:
   nix build .#bats-{{tags}} --no-link --print-build-logs
 
-# debug: run target/debug/just (see build-direct) with --events-fd against a
-# self-provisioned scratch justfile; events drain to stdout (fd 3), child
-# output and chrome go to stderr. RFC 0002 smoke loop for agents.
+# Run `just build-cargo` first to populate target/debug/just.
+# fast bats iteration against the locally-built binary in target/debug
+[group: 'post-build']
+test-bats-local *targets='*.bats':
+  JUST_BIN=$(realpath ./target/debug/just) \
+    BATS_TEST_TIMEOUT=10 \
+    bats --jobs $(nproc) zz-tests_bats/{{targets}}
+
+# only run cargo tests matching `PATTERN`
+[group: 'post-build']
+test-filter PATTERN:
+  cargo ltest {{PATTERN}}
+
+[group: 'post-build']
+test-fuzz:
+  cargo +nightly fuzz run fuzz-compiler
+
+[group: 'post-build']
+test-completions:
+  #!/usr/bin/env bash
+  rm -rf tmp/complete
+  mkdir -p tmp/complete/bin
+  cargo lbuild
+  cp target/debug/just tmp/complete/bin
+  ./tmp/complete/bin/just --completions bash > tmp/complete/just.bash
+  cat > tmp/complete/justfile << EOF
+  alias hello := foo::bar
+  mod foo
+  EOF
+  echo 'bar:' > tmp/complete/foo.just
+  cd tmp/complete && PATH="`realpath bin`:$PATH" bash --init-file just.bash
+
+[group: 'codemod']
+codemod-fmt:
+  cargo fmt --all
+
+[group: 'codemod']
+codemod-replace FROM TO:
+  sd '{{FROM}}' '{{TO}}' src/*.rs
+
+[group: 'inspection']
+view-man: build-man
+  man man/just.1
+
+[group: 'inspection']
+list-outdated:
+  cargo outdated -R
+
+[group: 'inspection']
+list-unused:
+  cargo +nightly udeps --workspace
+
+[group: 'inspection']
+list-readme-constants:
+  cargo ltest constants::tests::readme_table -- --nocapture
+
+# Runs target/debug/just (see build-cargo) against a self-provisioned
+# scratch justfile; events drain to stdout (fd 3), child output and
+# chrome go to stderr.
+# RFC 0002 smoke loop for agents: exercise --events-fd by hand
 [group: 'debug']
 debug-events-fd *args='hello':
   @mkdir -p .tmp/events-test
   @printf 'hello: dep\n  @echo hello-from-recipe\n\ndep:\n  @echo dep-output\n' > .tmp/events-test/justfile
   bash -c 'exec 3>&1 1>&2; ./target/debug/just --events-fd 3 --justfile .tmp/events-test/justfile {{args}}'
 
-# Fast iteration — runs against the locally-built binary in target/debug.
-# Run `just build-direct` first to populate target/debug/just.
-[group: 'test']
-test-bats-local *targets='*.bats':
-  JUST_BIN=$(realpath ./target/debug/just) \
-    BATS_TEST_TIMEOUT=10 \
-    bats --jobs $(nproc) zz-tests_bats/{{targets}}
+[group: 'debug']
+watch-cargo +args='ltest':
+  cargo watch --clear --exec '{{ args }}'
 
-[group: 'check']
-ci: test clippy build-book forbid
-  cargo fmt --all -- --check
-  cargo update --locked --package just
-
-[group: 'check']
-fuzz:
-  cargo +nightly fuzz run fuzz-compiler
-
-[group: 'misc']
+[group: 'debug']
 run:
   cargo lrun
 
-# only run tests matching `PATTERN`
-[group: 'test']
-filter PATTERN:
-  cargo ltest {{PATTERN}}
+# build.rs guards against drift between these three files.
+# rewrite the fork version in version.env, Cargo.toml, and Cargo.lock
+[group: 'maintenance']
+bump-version new_version:
+  sed -E -i 's/^(export JUST_US_VERSION)=.*/\1={{ new_version }}/' version.env
+  sed -E -i '0,/^version = ".*"$/s//version = "{{ new_version }}"/' Cargo.toml
+  cargo update --workspace
 
-[group: 'misc']
-build: build-direct
+# create and push a signed annotated v* tag from version.env
+[group: 'maintenance']
+tag $message:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  . version.env
+  tag="v${JUST_US_VERSION:?missing JUST_US_VERSION in version.env}"
+  git tag -s -m "$message" "$tag"
+  echo "created tag: $tag"
+  git push origin "$tag"
+  echo "pushed $tag"
+  git tag -v "$tag"
 
-[group: 'misc']
-build-direct:
-  cargo build
-
-[group: 'misc']
-fmt:
-  cargo fmt --all
-
-[group: 'check']
-shellcheck:
-  shellcheck www/install.sh
-
-[group: 'doc']
-man:
-  mkdir -p man
-  cargo lrun -- --man > man/just.1
-
-[group: 'doc']
-view-man: man
-  man man/just.1
+# The changelog is generated BEFORE bump-version so the release-bump
+# commit doesn't appear in its own changelog.
+# cut a fork release: bump, commit, tag, gh release create
+[group: 'maintenance']
+release new_version:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  if [[ "$branch" != "master" ]]; then
+    echo "release only allowed from master (on '$branch')" >&2
+    exit 1
+  fi
+  prev=$(git tag --sort=-v:refname -l 'v*' | head -1)
+  header="release v{{ new_version }}"
+  if [[ -n "$prev" ]]; then
+    summary=$(git log --format='- %s' "$prev"..HEAD)
+    msg="$header"$'\n\n'"$summary"
+  else
+    msg="$header"
+  fi
+  just bump-version "{{ new_version }}"
+  git add version.env Cargo.toml Cargo.lock
+  git commit -m "$header"
+  just tag "$msg"
+  gh release create "v{{ new_version }}" --title "$header" --notes "$msg"
 
 # add git log messages to changelog
-[group: 'release']
+[group: 'maintenance']
 update-changelog:
   echo >> CHANGELOG.md
   git log --pretty='format:- %s' >> CHANGELOG.md
 
-[group: 'release']
+[group: 'maintenance']
 update-contributors:
   cargo lrun --release --package update-contributors
 
-[group: 'check']
-action-versions:
-  cargo lrun --package action-versions
-
-[group: 'check']
-outdated:
-  cargo outdated -R
-
-[group: 'check']
-unused:
-  cargo +nightly udeps --workspace
-
-# publish current GitHub master branch
-[group: 'release']
-publish:
-  #!/usr/bin/env bash
-  set -euxo pipefail
-  rm -rf tmp/release
-  git clone --depth 1 git@github.com:casey/just.git tmp/release
-  cd tmp/release
-  ! grep '<sup>master</sup>' README.md
-  VERSION=`sed -En 's/version[[:space:]]*=[[:space:]]*"([^"]+)"/\1/p' Cargo.toml | head -1`
-  git tag -a $VERSION -m "Release $VERSION"
-  git push origin $VERSION
-  cargo publish
-  cd ../..
-  rm -rf tmp/release
-
-[group: 'release']
-readme-version-notes:
-  grep '<sup>master</sup>' README.md
-
-# clean up feature branch BRANCH
-[group: 'dev']
-done BRANCH=`git rev-parse --abbrev-ref HEAD`:
-  git checkout master
-  git diff --no-ext-diff --quiet --exit-code
-  git pull --rebase github master
-  git diff --no-ext-diff --quiet --exit-code {{BRANCH}}
-  git branch -D {{BRANCH}}
-
-# install just from crates.io
-[group: 'misc']
-install:
-  cargo install -f just
-
 # install development dependencies
-[group: 'dev']
+[group: 'operational']
 install-dev-deps:
   rustup install nightly
   rustup update nightly
@@ -163,18 +246,35 @@ install-dev-deps:
   cargo install --locked mdbook@0.4.52
   cargo install --locked mdbook-linkcheck@0.7.7
 
-# everyone's favorite animate paper clip
-[group: 'check']
-clippy:
-  cargo lclippy --all --all-targets --all-features -- --deny warnings
+# run all polyglot recipes
+[group: 'demo']
+polyglot: _python _js _perl _sh _ruby
 
-[group: 'check']
-forbid:
-  ./bin/forbid
+_python:
+  #!/usr/bin/env python3
+  print('Hello from python!')
 
-[group: 'dev']
-replace FROM TO:
-  sd '{{FROM}}' '{{TO}}' src/*.rs
+_js:
+  #!/usr/bin/env node
+  console.log('Greetings from JavaScript!')
+
+_perl:
+  #!/usr/bin/env perl
+  print "Larry Wall says Hi!\n";
+
+_sh:
+  #!/usr/bin/env sh
+  hello='Yo'
+  echo "$hello from a shell script!"
+
+_nu:
+  #!/usr/bin/env nu
+  let hellos = ["Greetings", "Yo", "Howdy"]
+  $hellos | each {|el| print $"($el) from a nushell script!" }
+
+_ruby:
+  #!/usr/bin/env ruby
+  puts "Hello from ruby!"
 
 [group: 'demo']
 test-quine:
@@ -209,73 +309,12 @@ quine-text := '
   }
 '
 
-[group: 'check']
-build-book:
-  cargo lrun --package generate-book
-  mdbook build book/en
-  mdbook build book/zh
-
-[group: 'dev']
-print-readme-constants-table:
-  cargo ltest constants::tests::readme_table -- --nocapture
-
-# run all polyglot recipes
-[group: 'demo']
-polyglot: _python _js _perl _sh _ruby
-
-_python:
-  #!/usr/bin/env python3
-  print('Hello from python!')
-
-_js:
-  #!/usr/bin/env node
-  console.log('Greetings from JavaScript!')
-
-_perl:
-  #!/usr/bin/env perl
-  print "Larry Wall says Hi!\n";
-
-_sh:
-  #!/usr/bin/env sh
-  hello='Yo'
-  echo "$hello from a shell script!"
-
-_nu:
-  #!/usr/bin/env nu
-  let hellos = ["Greetings", "Yo", "Howdy"]
-  $hellos | each {|el| print $"($el) from a nushell script!" }
-
-_ruby:
-  #!/usr/bin/env ruby
-  puts "Hello from ruby!"
-
 # Print working directory, for demonstration purposes!
 [group: 'demo']
 pwd:
   echo {{invocation_directory()}}
 
-[group: 'test']
-test-release-workflow:
-  -git tag -d test-release
-  -git push origin :test-release
-  git tag test-release
-  git push origin test-release
-
-[group: 'test']
-test-completions:
-  #!/usr/bin/env bash
-  rm -rf tmp/complete
-  mkdir -p tmp/complete/bin
-  cargo lbuild
-  cp target/debug/just tmp/complete/bin
-  ./tmp/complete/bin/just --completions bash > tmp/complete/just.bash
-  cat > tmp/complete/justfile << EOF
-  alias hello := foo::bar
-  mod foo
-  EOF
-  echo 'bar:' > tmp/complete/foo.just
-  cd tmp/complete && PATH="`realpath bin`:$PATH" bash --init-file just.bash
-
+[group: 'demo']
 rule110:
   just -f examples/rule110.just
 
