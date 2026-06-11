@@ -8,13 +8,17 @@ log := "warn"
 
 export JUST_LOG := log
 
+# CI-equivalent entrypoint (and the spinclass pre-merge lane): if bare
+# `just` passes, the tree is mergeable. Aggregates only, per
+# eng-design_patterns-justfile(7).
+default: build test
+
 [group: 'dev']
 watch +args='ltest':
   cargo watch --clear --exec '{{ args }}'
 
 [group: 'test']
-test:
-  cargo ltest --all
+test: test-direct test-bats
 
 [group: 'test']
 test-direct *args='--all':
@@ -66,8 +70,7 @@ filter PATTERN:
   cargo ltest {{PATTERN}}
 
 [group: 'misc']
-build:
-  cargo lbuild
+build: build-direct
 
 [group: 'misc']
 build-direct:
