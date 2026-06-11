@@ -25,23 +25,30 @@ fn capture_with_events(
   cmd.stderr(Stdio::piped());
   match cmd.output() {
     Ok(output) => {
+      // Chunk so each serialized record fits a single atomic
+      // `write(2)` on a possibly-shared channel (crap RFC 0002 §7);
+      // consumers concatenate `data` across records by contract.
       if !output.stdout.is_empty() {
         let data = String::from_utf8_lossy(&output.stdout);
-        events.emit(&Event::Output {
-          tp,
-          stream: OutputStream::Stdout,
-          format: OutputDataFormat::Utf8,
-          data: &data,
-        });
+        for chunk in event::chunk_str(&data, event::OUTPUT_CHUNK_BYTES) {
+          events.emit(&Event::Output {
+            tp,
+            stream: OutputStream::Stdout,
+            format: OutputDataFormat::Utf8,
+            data: chunk,
+          });
+        }
       }
       if !output.stderr.is_empty() {
         let data = String::from_utf8_lossy(&output.stderr);
-        events.emit(&Event::Output {
-          tp,
-          stream: OutputStream::Stderr,
-          format: OutputDataFormat::Utf8,
-          data: &data,
-        });
+        for chunk in event::chunk_str(&data, event::OUTPUT_CHUNK_BYTES) {
+          events.emit(&Event::Output {
+            tp,
+            stream: OutputStream::Stderr,
+            format: OutputDataFormat::Utf8,
+            data: chunk,
+          });
+        }
       }
       (Ok(output.status), None)
     }
@@ -453,6 +460,16 @@ impl<'src> Recipe<'src> {
         cmd.env(key, value);
       }
 
+      // crap RFC 0002 §6.1: re-offer the attach protocol to the
+      // child, scoped under this recipe's node — a crap-aware child
+      // emits structured records onto our channel; anything else
+      // produces garbage, captured below as `output` records.
+      if let Some(offer) = context.events.reoffer_env(context.tp, context.depth) {
+        for (key, value) in &offer {
+          cmd.env(key, value);
+        }
+      }
+
       // RFC 0002 §Suppressing Inherited stdout/stderr: when
       // --events-fd is active, capture child output into `output`
       // events instead of inheriting just's stdio. Output events
@@ -633,6 +650,14 @@ impl<'src> Recipe<'src> {
 
     for (key, value) in env {
       command.env(key, value);
+    }
+
+    // crap RFC 0002 §6.1: re-offer to the script child, same as the
+    // linewise path above.
+    if let Some(offer) = context.events.reoffer_env(context.tp, context.depth) {
+      for (key, value) in &offer {
+        command.env(key, value);
+      }
     }
 
     // run it! (with events-fd capture path, per RFC 0002)

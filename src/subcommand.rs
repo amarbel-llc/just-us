@@ -85,11 +85,14 @@ impl Subcommand {
 
     // Validate --events-fd (if set) before any recipe could run.
     // RFC 0002 §Activation: invalid fd MUST cause a non-zero exit
-    // before recipe execution begins.
+    // before recipe execution begins. With the flag absent, fall
+    // back to ambient attachment via a `CRAP=2` environment offer
+    // (crap RFC 0002) — which, by contrast, degrades silently to a
+    // noop sink on any defect.
     let events = if let Some(fd) = config.events_fd {
       EventSink::from_config(config).map_err(|io_error| Error::EventsFdInvalid { fd, io_error })?
     } else {
-      EventSink::noop()
+      EventSink::from_ambient()
     };
 
     let search = Search::search(config)?;

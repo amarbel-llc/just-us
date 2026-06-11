@@ -235,8 +235,11 @@ impl<'src> Justfile<'src> {
             &invocation.arguments,
             config,
             events,
-            0,    // depth: top-level invocation
-            None, // parent_tp: top-level has no parent
+            0, // depth: top-level invocation
+            // parent_tp: top-level recipes nest under the harness's
+            // CRAP_PARENT node when ambient-attached (crap RFC 0002
+            // §7); otherwise they have no parent.
+            events.root_parent(),
             false,
             overrides,
             &ran,
@@ -468,7 +471,9 @@ impl<'src> Justfile<'src> {
       tp,
       name: recipe.name(),
       namepath: &namepath,
-      depth,
+      // Continue the harness's depth numbering when ambient-attached
+      // (CRAP_DEPTH, crap RFC 0002 §2); depth_base is 0 otherwise.
+      depth: depth + events.depth_base(),
       parent: parent_tp,
       doc: recipe.doc(),
       quiet: recipe.quiet,
