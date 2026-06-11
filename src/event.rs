@@ -231,7 +231,10 @@ mod tests {
   #[test]
   fn plan_record_shape() {
     let out = capture(|s| s.emit_plan(3));
-    assert_eq!(out, "{\"type\":\"plan\",\"version\":1,\"recipe_count\":3}\n");
+    assert_eq!(
+      out,
+      "{\"type\":\"plan\",\"version\":1,\"recipe_count\":3}\n"
+    );
   }
 
   #[test]

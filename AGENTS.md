@@ -41,9 +41,27 @@ Notable lanes:
 - `just debug-events-fd` — hand-driven `--events-fd` smoke loop.
 - The `demo` group (quine, polyglot, …) is upstream heritage, kept
   as-is deliberately.
-- `cargo l*` invocations (`lclippy`, `lrun`, `ltest`) need
-  [cargo-limit](https://github.com/cargo-limit/cargo-limit); see
-  `just install-dev-deps`.
+- `cargo l*` invocations (`lclippy`, `lrun`, `ltest`) need cargo-limit
+  (in the devShell).
+
+## Formatting and linting (conformist)
+
+Formatting/linting is multiplexed through
+[conformist](https://github.com/amarbel-llc/conformist) (flake input;
+self-describing config in `flake.nix`): rustfmt + nixfmt formatters,
+shellcheck scoped to `www/install.sh`, and the eng conformance
+linters (agents-md, justfile-default).
+
+- `just lint-fmt` — read-only gate (`checks.formatting`, sandboxed);
+  runs in the `default` merge lane.
+- `just codemod-fmt` — `nix fmt`, the modifying twin.
+- rustfmt uses a native `check-command` to dodge conformist#28
+  (sandbox-copy checks lose `rustfmt.toml`); drop the override when
+  fixed.
+- `linters.eng-versioning` stays off until conformist#29 (go.mod-only
+  key derivation) supports Rust repos.
+- `lint-clippy` is red on fork code (just-us#17) and lives only in the
+  `ci` aggregate until clean.
 
 ## Upstream resyncs
 

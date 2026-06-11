@@ -17,10 +17,10 @@ nix-system := arch() + "-" + if os() == "macos" { "darwin" } else { "linux" }
 
 # CI-equivalent entrypoint (and the spinclass pre-merge lane), aggregates only:
 # if bare `just` passes, the tree is mergeable
-default: validate build test
+default: validate lint build test
 
-# everything CI checks beyond `default`: lints, lockfile freshness, book build
-ci: lint validate-lockfile test build-book
+# everything CI checks beyond `default`: clippy, forbid, lockfile, book build
+ci: lint lint-clippy lint-forbid validate-lockfile test build-book
 
 [group: 'pre-build']
 validate: validate-devshell
@@ -37,26 +37,31 @@ validate-devshell:
 validate-lockfile:
   cargo update --locked --package just
 
+# lint-clippy and lint-forbid hang off `ci` instead because clippy is
+# red on fork code (just-us#17) and forbid needs rg from the devshell;
+# fold them back into this aggregate once #17 lands.
+# hermetic read-only lint gate (conformist only, for now)
 [group: 'pre-build']
-lint: lint-clippy lint-fmt lint-forbid lint-shellcheck
+lint: lint-fmt
 
 # everyone's favorite animate paper clip
 [group: 'pre-build']
 lint-clippy:
   cargo lclippy --all --all-targets --all-features -- --deny warnings
 
-# Read-only formatting gate; `codemod-fmt` is the modifying twin.
+# Builds the conformist `checks.formatting` derivation, which runs every
+# formatter and linter (rustfmt, nixfmt, shellcheck, eng conformance)
+# against a /nix/store snapshot of the tree and fails if anything would
+# change. Does NOT modify the worktree --- `codemod-fmt` is the
+# modifying twin.
+# read-only formatting/linting gate via conformist
 [group: 'pre-build']
 lint-fmt:
-  cargo fmt --all -- --check
+  nix build .#checks.{{ nix-system }}.formatting --no-link --print-build-logs
 
 [group: 'pre-build']
 lint-forbid:
   ./bin/forbid
-
-[group: 'pre-build']
-lint-shellcheck:
-  shellcheck www/install.sh
 
 # Not in the `lint` aggregate: this is upstream-maintenance, not a
 # per-merge gate.
@@ -137,8 +142,12 @@ test-completions:
   cd tmp/complete && PATH="`realpath bin`:$PATH" bash --init-file just.bash
 
 [group: 'codemod']
-codemod-fmt:
-  cargo fmt --all
+codemod-fmt: codemod-fmt-conformist
+
+# rewrite the worktree with every formatter and linter repair (nix fmt)
+[group: 'codemod']
+codemod-fmt-conformist:
+  nix fmt
 
 [group: 'codemod']
 codemod-replace FROM TO:

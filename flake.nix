@@ -14,9 +14,22 @@
     # `nixpkgs.overlays.default` internally). Stock NixOS/nixpkgs
     # doesn't expose that, so we let bats bring its own pin.
     bats.url = "github:amarbel-llc/bats";
+
+    # conformist (formatter/linter multiplexer) supplies `nix fmt`, the
+    # read-only `checks.formatting` gate, and the eng conformance
+    # linters. Tool binaries resolve from our `nixpkgs`; only the
+    # conformist binary itself comes from the input's own pin.
+    conformist.url = "github:amarbel-llc/conformist";
   };
 
-  outputs = { self, nixpkgs, flake-utils, bats, ... }@inputs:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      bats,
+      ...
+    }@inputs:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
@@ -64,6 +77,43 @@
           };
         };
 
+        conformistEval = inputs.conformist.lib.evalModule pkgs {
+          package = inputs.conformist.packages.${system}.default;
+
+          # Formatters: rust + nix only — deliberately narrow so upstream
+          # prose and config (README.md, Cargo.toml, ...) stay untouched
+          # across resyncs. rustfmt's edition default (2024) matches
+          # rustfmt.toml.
+          programs.rustfmt.enable = true;
+          programs.nixfmt.enable = true;
+
+          # Native read-only check so `checks.formatting` doesn't use the
+          # sandbox-copy strategy, which loses rustfmt.toml and checks
+          # against rustfmt's default config (conformist#28). Drop when
+          # that's fixed upstream.
+          settings.formatter.rustfmt."check-command" = pkgs.lib.getExe pkgs.rustfmt;
+          settings.formatter.rustfmt."check-options" = [
+            "--check"
+            "--config"
+            "skip_children=true"
+            "--edition"
+            "2024"
+          ];
+
+          # Mirror the pre-conformist lint-shellcheck gate: only the
+          # install script. The rest of the tree's shell (e.g. generated
+          # completions) is upstream's and not held to shellcheck.
+          linters.shellcheck.enable = true;
+          linters.shellcheck.includes = pkgs.lib.mkForce [ "www/install.sh" ];
+
+          # eng conformance linters. NOT enabled: eng-versioning (derives
+          # the version key from go.mod; Rust repos unsupported yet) and
+          # justfile-recipe-names (the upstream-heritage demo recipes are
+          # deliberately non-verb-noun).
+          linters.agents-md.enable = true;
+          linters.justfile-default.enable = true;
+        };
+
         batsLib = import ./bats.nix {
           inherit pkgs;
           myBin = just;
@@ -71,7 +121,8 @@
           bats-libs = inputs.bats.packages.${system}.bats-libs;
           batsSrc = pkgs.lib.cleanSourceWith {
             src = ./zz-tests_bats;
-            filter = path: type:
+            filter =
+              path: type:
               type == "directory"
               || pkgs.lib.hasSuffix ".bats" path
               || baseNameOf path == "common.bash"
@@ -86,7 +137,12 @@
 
         checks = {
           bats-default = batsLib.batsLaneOutputs.bats-default;
+          formatting = conformistEval.config.build.check self;
         };
+
+        # `nix fmt` — rewrites the worktree with every formatter and
+        # linter repair; `checks.formatting` is the read-only twin.
+        formatter = conformistEval.config.build.wrapper;
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
@@ -100,6 +156,10 @@
             # dispatches on argv[0]. Pin a separate-binaries coreutils first
             # in PATH so the symlink trick works.
             (coreutils.override { singleBinary = false; })
+            # cargo l* (lclippy/lrun/ltest) used by the lint/run recipes.
+            cargo-limit
+            # bin/forbid greps with rg.
+            ripgrep
           ];
         };
       }
