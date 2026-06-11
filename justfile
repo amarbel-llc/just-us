@@ -30,6 +30,15 @@ test-bats:
 test-bats-tags *tags:
   nix build .#bats-{{tags}} --no-link --print-build-logs
 
+# debug: run target/debug/just (see build-direct) with --events-fd against a
+# self-provisioned scratch justfile; events drain to stdout (fd 3), child
+# output and chrome go to stderr. RFC 0002 smoke loop for agents.
+[group: 'debug']
+debug-events-fd *args='hello':
+  @mkdir -p .tmp/events-test
+  @printf 'hello: dep\n  @echo hello-from-recipe\n\ndep:\n  @echo dep-output\n' > .tmp/events-test/justfile
+  bash -c 'exec 3>&1 1>&2; ./target/debug/just --events-fd 3 --justfile .tmp/events-test/justfile {{args}}'
+
 # Fast iteration — runs against the locally-built binary in target/debug.
 # Run `just build-direct` first to populate target/debug/just.
 [group: 'test']
