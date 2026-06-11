@@ -123,6 +123,7 @@ macro_rules! run_error {
         match $crate::testing::compile(&$crate::unindent::unindent($src))
           .run(
             &config,
+            &$crate::event::EventSink::noop(),
             &search,
             &arguments,
             &HashMap::new(),
