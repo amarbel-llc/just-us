@@ -44,12 +44,16 @@ let
 
   batsFiles = lib.filter (f: lib.hasSuffix ".bats" f) (builtins.attrNames (builtins.readDir batsSrc));
 
+  # An optional group `(...)?` is used instead of an empty alternation
+  # branch `(...|)` because darwin's libc++ regex engine (backing
+  # builtins.match) rejects empty branches as invalid POSIX ERE. The
+  # group is null when the input is all whitespace.
   trimWhitespace =
     s:
     let
-      m = builtins.match "[[:space:]]*(.*[^[:space:]]|)[[:space:]]*" s;
+      m = builtins.match "[[:space:]]*(.*[^[:space:]])?[[:space:]]*" s;
     in
-    if m == null then s else builtins.head m;
+    if m == null || builtins.head m == null then "" else builtins.head m;
 
   extractFileTags =
     file:
