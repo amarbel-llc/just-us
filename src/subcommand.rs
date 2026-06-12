@@ -88,11 +88,20 @@ impl Subcommand {
     // before recipe execution begins. With the flag absent, fall
     // back to ambient attachment via a `CRAP=2` environment offer
     // (crap RFC 0002) — which, by contrast, degrades silently to a
-    // noop sink on any defect.
+    // noop sink on any defect. Attachment is gated to the
+    // recipe-running subcommands so silent invocations (`--list`,
+    // `--dump`, …) never connect to or birth a sink server, and it
+    // happens here — before any recipe — to satisfy the RFC's
+    // connect-before-spawn rule.
     let events = if let Some(fd) = config.events_fd {
       EventSink::from_config(config).map_err(|io_error| Error::EventsFdInvalid { fd, io_error })?
-    } else {
+    } else if matches!(
+      self,
+      Choose { .. } | Command { .. } | Evaluate { .. } | Run { .. }
+    ) {
       EventSink::from_ambient()
+    } else {
+      EventSink::noop()
     };
 
     let search = Search::search(config)?;

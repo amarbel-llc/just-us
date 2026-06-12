@@ -460,11 +460,11 @@ impl<'src> Recipe<'src> {
         cmd.env(key, value);
       }
 
-      // crap RFC 0002 §6.1: re-offer the attach protocol to the
-      // child, scoped under this recipe's node — a crap-aware child
-      // emits structured records onto our channel; anything else
-      // produces garbage, captured below as `output` records.
-      if let Some(offer) = context.events.reoffer_env(context.tp, context.depth) {
+      // crap RFC 0002 §5: scope the child into our tree — a
+      // crap-aware child connects to the sink itself and nests under
+      // this recipe's node; anything else produces garbage, captured
+      // below as `output` records.
+      if let Some(offer) = context.events.reoffer_env(context.tp) {
         for (key, value) in &offer {
           cmd.env(key, value);
         }
@@ -652,9 +652,9 @@ impl<'src> Recipe<'src> {
       command.env(key, value);
     }
 
-    // crap RFC 0002 §6.1: re-offer to the script child, same as the
-    // linewise path above.
-    if let Some(offer) = context.events.reoffer_env(context.tp, context.depth) {
+    // crap RFC 0002 §5: scope the script child, same as the linewise
+    // path above.
+    if let Some(offer) = context.events.reoffer_env(context.tp) {
       for (key, value) in &offer {
         command.env(key, value);
       }

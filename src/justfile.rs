@@ -471,9 +471,7 @@ impl<'src> Justfile<'src> {
       tp,
       name: recipe.name(),
       namepath: &namepath,
-      // Continue the harness's depth numbering when ambient-attached
-      // (CRAP_DEPTH, crap RFC 0002 §2); depth_base is 0 otherwise.
-      depth: depth + events.depth_base(),
+      depth,
       parent: parent_tp,
       doc: recipe.doc(),
       quiet: recipe.quiet,
