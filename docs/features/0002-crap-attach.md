@@ -1,9 +1,25 @@
 ---
-status: prototype
+status: prototype (transport superseded)
 date: 2026-06-11
 ---
 
 # FDR 0002: Ambient CRAP Attachment (crap RFC 0002 prototype)
+
+> **Status note (2026-06-12).** crap RFC 0002 was rewritten around a
+> client/birthed-server model: nodes are only ever clients of a
+> unix-socket sink server birthed by the tree's root (fork-and-become /
+> re-exec-self / external binary), which grants each connection a
+> disjoint deterministic id base and splices lines into one merged
+> stream. That dissolves this prototype's shared-fd machinery —
+> `CRAP_FD`, `CRAP_ACCEPT`, `CRAP_DEPTH`, the hello, the dup'd re-offer
+> descriptor, random tp bases, and the PIPE_BUF/chunking discipline are
+> all withdrawn from the spec. What this prototype validated survives:
+> ambient `CRAP=2` detection with silent degradation, `CRAP_PARENT`
+> lineage nesting, garbage capture, evaluation-child withdrawal,
+> explicit-flag precedence, and acceptance by `crap-present` /
+> `:: validate`. Reworking the implementation to `attach()`
+> connect-or-birth with granted bases is the tracked next step; until
+> then the code below implements the superseded first-draft transport.
 
 just-us is the prototype implementation of the **CRAP attach protocol**
 (crap RFC 0002, `amarbel-llc/crap` →
