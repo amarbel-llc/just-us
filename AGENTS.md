@@ -47,7 +47,7 @@ Notable lanes:
 ## Formatting and linting (conformist)
 
 Formatting/linting is multiplexed through
-[conformist](https://github.com/amarbel-llc/conformist) (flake input;
+[conformist](https://code.linenisgreat.com/conformist) (flake input;
 self-describing config in `flake.nix`): rustfmt + nixfmt formatters,
 shellcheck scoped to `www/install.sh`, and the eng conformance
 linters (agents-md, justfile-default).
