@@ -16,6 +16,16 @@ format) and `docs/features/0001-*` (flag design). The feature is
 PR is planned unless upstream engages. Don't burn cycles preparing
 upstreamable patch series.
 
+A second, much smaller fork-only addition rides along:
+`Recipe.doc_prelude` (`docs/features/0002-*`), a field in
+`just --dump --dump-format json` carrying the comment lines above a
+recipe's doc-comment line that `just --list` silently discards. It is
+a few dozen lines of parser plumbing serving one linter (below), not
+a second reason for the fork to exist — but it is fork-only on the
+same terms as `--events-fd`, and it is strictly additive: `doc`,
+`--list`, and `--fmt` are unchanged, and the JSON key is omitted when
+empty.
+
 ## Versioning
 
 The fork versions independently of upstream (its own `0.x` line, not
@@ -50,7 +60,7 @@ Formatting/linting is multiplexed through
 [conformist](https://code.linenisgreat.com/conformist) (flake input;
 self-describing config in `flake.nix`): rustfmt + nixfmt formatters,
 shellcheck scoped to `www/install.sh`, and the eng conformance
-linters (agents-md, justfile-default).
+linters (agents-md, justfile-default, justfile-orphan-summary).
 
 - `just lint-fmt` — read-only gate (`checks.formatting`, sandboxed);
   runs in the `default` merge lane.
@@ -62,6 +72,13 @@ linters (agents-md, justfile-default).
   key derivation) supports Rust repos.
 - `lint-clippy` is red on fork code (just-us#17) and lives only in the
   `ci` aggregate until clean.
+- `justfile-orphan-summary` is the fork's OWN linter, not one of
+  conformist's: it lives in `nix/linters/`, is dogfooded here, and is
+  exported for downstream repos as
+  `lib.conformistLinters.justfile-orphan-summary`. It reads the
+  fork-only `doc_prelude` field, so its `justPackage` MUST be a
+  just-us build — against an upstream `just` the key is never emitted
+  and the check passes vacuously. No repair: the fix is editorial.
 
 ## Upstream resyncs
 
@@ -80,6 +97,10 @@ side unless upstream changed something load-bearing:
   not fire on fork tags)
 - `src/` events-fd implementation and `zz-tests_bats/` (fork-only
   feature code)
+- `src/parser.rs`, `src/recipe.rs`, `src/unresolved_recipe.rs` (the
+  `doc_prelude` field and the parser's prelude capture — fork-only,
+  and in three files upstream churns constantly; the `Recipe` struct
+  literals in particular conflict on any upstream field addition)
 
 ## CI / workflows
 

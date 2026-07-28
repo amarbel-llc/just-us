@@ -70,6 +70,9 @@ struct Recipe<'a> {
   body: Vec<Value>,
   dependencies: Vec<Dependency<'a>>,
   doc: Option<&'a str>,
+  // Omitted from the dump when empty, so existing cases need no `doc_prelude`.
+  #[serde(default)]
+  doc_prelude: Vec<&'a str>,
   name: &'a str,
   namepath: &'a str,
   parameters: Vec<Parameter<'a>>,
@@ -468,6 +471,83 @@ fn doc_comment() {
       .into(),
       ..default()
     },
+  );
+}
+
+#[test]
+fn doc_prelude() {
+  case(
+    "
+      # stranded one
+      # stranded two
+      # hello
+      foo:
+    ",
+    Module {
+      first: Some("foo"),
+      recipes: [(
+        "foo",
+        Recipe {
+          doc: Some("hello"),
+          doc_prelude: vec!["stranded one", "stranded two"],
+          name: "foo",
+          namepath: "foo",
+          ..default()
+        },
+      )]
+      .into(),
+      ..default()
+    },
+  );
+}
+
+/// A bare `#` line separates the prose above it from the summary below, so
+/// nothing is stranded and `doc_prelude` stays empty.
+#[test]
+fn doc_prelude_bare_hash_separator() {
+  case(
+    "
+      # stranded
+      #
+      # hello
+      foo:
+    ",
+    Module {
+      first: Some("foo"),
+      recipes: [(
+        "foo",
+        Recipe {
+          doc: Some("hello"),
+          name: "foo",
+          namepath: "foo",
+          ..default()
+        },
+      )]
+      .into(),
+      ..default()
+    },
+  );
+}
+
+/// An empty `doc_prelude` is skipped entirely, so pre-existing dumps are
+/// byte-identical and consumers must tolerate an absent key.
+#[test]
+fn doc_prelude_key_omitted_when_empty() {
+  let stdout = Test::new()
+    .justfile("# hello\nfoo:")
+    .args(["--dump", "--dump-format", "json"])
+    .stdout_regex(".*")
+    .success()
+    .stdout;
+
+  let dump = serde_json::from_str::<Value>(&stdout).unwrap();
+
+  assert!(
+    !dump["recipes"]["foo"]
+      .as_object()
+      .unwrap()
+      .contains_key("doc_prelude"),
+    "expected `doc_prelude` to be absent, got: {stdout}"
   );
 }
 

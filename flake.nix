@@ -112,6 +112,17 @@
           # deliberately non-verb-noun).
           linters.agents-md.enable = true;
           linters.justfile-default.enable = true;
+
+          # Dogfood the fork's own linter: no recipe may hide prose above
+          # the single comment line `just --list` prints as its
+          # description. The module is the same file this flake exports as
+          # `lib.conformistLinters.justfile-orphan-summary` (below), and
+          # `justPackage` is the just built right here, so the check reads
+          # the fork-only `doc_prelude` field rather than passing vacuously
+          # against an upstream `just`.
+          imports = [ ./nix/linters/justfile-orphan-summary.nix ];
+          linters.justfile-orphan-summary.enable = true;
+          linters.justfile-orphan-summary.justPackage = just;
         };
 
         batsLib = import ./bats.nix {
@@ -163,5 +174,30 @@
           ];
         };
       }
-    );
+    )
+    // {
+      # System-independent reusable outputs, outside eachDefaultSystem: a
+      # conformist linter module PATH carries no per-system derivation, so it
+      # must not be published per system.
+      #
+      # `lib.conformistLinters.justfile-orphan-summary` is the module a
+      # downstream repo imports into its own `conformist.lib.evalModule`:
+      #
+      #   imports = [ just-us.lib.conformistLinters.justfile-orphan-summary ];
+      #   linters.justfile-orphan-summary.enable = true;
+      #   linters.justfile-orphan-summary.justPackage =
+      #     just-us.packages.${system}.default;
+      #
+      # `justPackage` is required precisely because the path is
+      # system-independent and cannot close over this flake's per-system `just`;
+      # the consumer supplies it, and it MUST be the fork (the rule reads the
+      # fork-only `doc_prelude` field of `just --dump --dump-format json`).
+      #
+      # The coupling lives HERE, in the repo that owns the parser feature, and
+      # not upstream in conformist: conformist must stay strictly upstream of
+      # its consumers and must not take just-us as an input. Same arrangement as
+      # purse-first's `lib.conformistLinters.dewey-*` (purse-first#163), which
+      # keeps its dagnabit coupling in the repo that owns dagnabit.
+      lib.conformistLinters.justfile-orphan-summary = ./nix/linters/justfile-orphan-summary.nix;
+    };
 }

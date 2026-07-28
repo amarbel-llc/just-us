@@ -15,8 +15,10 @@ export JUST_LOG := log
 # Flake output system tuple, portable across linux/darwin hosts.
 nix-system := arch() + "-" + if os() == "macos" { "darwin" } else { "linux" }
 
-# CI-equivalent entrypoint (and the spinclass pre-merge lane), aggregates only:
-# if bare `just` passes, the tree is mergeable
+# CI-equivalent entrypoint (and the spinclass pre-merge lane), aggregates
+# only: if bare `just` passes, the tree is mergeable.
+#
+# run the full local CI lane: validate, lint, build, test
 default: validate lint build test
 
 # everything CI checks beyond `default`: clippy, forbid, lockfile, book build
@@ -27,6 +29,7 @@ validate: validate-devshell
 
 # Catches flake/devshell breakage that the cargo build can mask. No
 # store output kept (--no-link) --- it's a build-check, not an artifact.
+#
 # verify the devShell evaluates and builds without errors
 [group: 'pre-build']
 validate-devshell:
@@ -40,6 +43,7 @@ validate-lockfile:
 # lint-clippy and lint-forbid hang off `ci` instead because clippy is
 # red on fork code (just-us#17) and forbid needs rg from the devshell;
 # fold them back into this aggregate once #17 lands.
+#
 # hermetic read-only lint gate (conformist only, for now)
 [group: 'pre-build']
 lint: lint-fmt
@@ -54,6 +58,7 @@ lint-clippy:
 # against a /nix/store snapshot of the tree and fails if anything would
 # change. Does NOT modify the worktree --- `codemod-fmt` is the
 # modifying twin.
+#
 # read-only formatting/linting gate via conformist
 [group: 'pre-build']
 lint-fmt:
@@ -65,6 +70,7 @@ lint-forbid:
 
 # Not in the `lint` aggregate: this is upstream-maintenance, not a
 # per-merge gate.
+#
 # check that GitHub Actions pins in the workflows are current
 [group: 'pre-build']
 lint-action-versions:
@@ -94,6 +100,7 @@ test: test-cargo test-bats
 # XDG_CONFIG_HOME is scrubbed because upstream's tests/global.rs unix
 # test isolates HOME but not XDG_CONFIG_HOME, so a real
 # ~/.config/just/justfile leaks in and fails the suite.
+#
 # run the cargo test suite
 [group: 'post-build']
 test-cargo *args='--all':
@@ -110,6 +117,7 @@ test-bats-tags *tags:
   nix build .#bats-{{tags}} --no-link --print-build-logs
 
 # Run `just build-cargo` first to populate target/debug/just.
+#
 # fast bats iteration against the locally-built binary in target/debug
 [group: 'post-build']
 test-bats-local *targets='*.bats':
@@ -172,6 +180,7 @@ list-readme-constants:
 # Runs target/debug/just (see build-cargo) against a self-provisioned
 # scratch justfile; events drain to stdout (fd 3), child output and
 # chrome go to stderr.
+#
 # RFC 0002 smoke loop for agents: exercise --events-fd by hand
 [group: 'debug']
 debug-events-fd *args='hello':
@@ -188,6 +197,7 @@ run:
   cargo lrun
 
 # build.rs guards against drift between these three files.
+#
 # rewrite the fork version in version.env, Cargo.toml, and Cargo.lock
 [group: 'maintenance']
 bump-version new_version:
@@ -210,6 +220,7 @@ tag $message:
 
 # The changelog is generated BEFORE bump-version so the release-bump
 # commit doesn't appear in its own changelog.
+#
 # cut a fork release: bump, commit, tag, gh release create
 [group: 'maintenance']
 release new_version:

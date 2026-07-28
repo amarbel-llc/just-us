@@ -56,6 +56,44 @@ pub(crate) struct Recipe<'src, D = Dependency<'src>> {
   pub(crate) body: Vec<Line<'src>>,
   pub(crate) dependencies: Vec<D>,
   pub(crate) doc: Option<String>,
+  /// The comment lines above `doc` that `--list` will never show.
+  ///
+  /// `doc` is only the LAST comment line above a recipe. When a recipe is
+  /// introduced by a block of contiguous comment lines, every line but the
+  /// last is silently dropped, and the `--list` summary column shows a
+  /// truncated fragment of a sentence:
+  ///
+  /// ```text
+  /// # Build the release binary and
+  /// # strip it
+  /// build:
+  /// ```
+  ///
+  /// lists as `strip it`. This field carries the dropped lines in source
+  /// order — here `["Build the release binary and"]` — so that the condition
+  /// is detectable from `--dump --dump-format json`. Its consumer is the
+  /// conformist linter `justfile-orphan-summary`; nothing in `just`'s own
+  /// output reads it, and `doc`, `--list`, and `--fmt` are unaffected. The
+  /// prelude comments remain ordinary items in the AST, so `--fmt` still
+  /// re-emits them verbatim.
+  ///
+  /// The run is the content-bearing comment lines immediately above `doc`,
+  /// and terminates at the first of:
+  ///
+  /// - a bare `#` line, whose text after the `#` is empty — the conventional
+  ///   way to write a block of prose and still give `--list` a summary;
+  /// - a blank line;
+  /// - any non-comment item (or a comment trailing one on the same line);
+  /// - the start of the file.
+  ///
+  /// A `[doc(…)]` attribute always yields an empty vector: the attribute is
+  /// what `--list` prints, so comments above it truncate nothing.
+  ///
+  /// Skipped when empty, so existing JSON dumps do not churn. Consumers must
+  /// treat an absent key as empty; in jq `null | length` is 0, so
+  /// `.doc_prelude | length > 0` works whether or not the key is present.
+  #[serde(skip_serializing_if = "Vec::is_empty")]
+  pub(crate) doc_prelude: Vec<String>,
   #[serde(skip)]
   pub(crate) file_depth: u32,
   #[serde(skip)]

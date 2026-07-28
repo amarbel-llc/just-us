@@ -118,6 +118,7 @@ impl<'src> UnresolvedRecipe<'src> {
       body: self.body,
       dependencies,
       doc: self.doc,
+      doc_prelude: self.doc_prelude,
       file_depth: self.file_depth,
       import_offsets: self.import_offsets,
       module_path: Some(modulepath.clone()),

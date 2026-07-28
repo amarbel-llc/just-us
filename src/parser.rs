@@ -1,5 +1,17 @@
 use {super::*, TokenKind::*};
 
+/// The result of `Parser::take_doc_comment`: an item's doc comment, plus the
+/// comment lines stranded above it.
+///
+/// `doc` is the summary `--list` prints; `prelude` is the run of comment lines
+/// that precede it and are therefore invisible to `--list`. Only recipes carry
+/// the prelude onwards — see `Recipe::doc_prelude` for what it is for and how
+/// the run is delimited. Module items discard it.
+struct DocComment {
+  doc: Option<String>,
+  prelude: Vec<String>,
+}
+
 /// Just language parser
 ///
 /// The parser is a (hopefully) straightforward recursive descent parser.
@@ -370,10 +382,23 @@ impl<'run, 'src> Parser<'run, 'src> {
     Ok(self.accept(kind)?.is_some())
   }
 
-  fn take_doc_comment(&mut self, attributes: &AttributeSet<'src>) -> Option<String> {
+  /// Take the doc comment preceding the item being parsed, and, when there is
+  /// one, the comment lines stranded above it.
+  ///
+  /// Consumes the doc comment's items — `--list` and `--fmt` have always
+  /// treated the last comment line above a recipe as the recipe's summary
+  /// rather than as a free-standing comment — but only *inspects* the prelude,
+  /// which stays in the AST for `--fmt` to re-emit. See `Recipe::doc_prelude`
+  /// for why the prelude is reported at all.
+  fn take_doc_comment(&mut self, attributes: &AttributeSet<'src>) -> DocComment {
     for attribute in attributes {
       if let Attribute::Doc(doc) = attribute {
-        return doc.as_ref().map(|doc| doc.cooked.clone());
+        // A `[doc(…)]` attribute is what `--list` prints, so comment lines
+        // above it are never truncated and never constitute a prelude.
+        return DocComment {
+          doc: doc.as_ref().map(|doc| doc.cooked.clone()),
+          prelude: Vec::new(),
+        };
       }
     }
 
@@ -384,14 +409,72 @@ impl<'run, 'src> Parser<'run, 'src> {
     {
       self.items.pop().unwrap();
 
-      if let Item::Comment(contents) = self.items.pop().unwrap() {
-        Some(contents[1..].trim_start().into())
+      let doc = if let Item::Comment(contents) = self.items.pop().unwrap() {
+        contents[1..].trim_start().into()
       } else {
         unreachable!();
+      };
+
+      DocComment {
+        doc: Some(doc),
+        prelude: self.take_doc_prelude(),
       }
     } else {
-      None
+      DocComment {
+        doc: None,
+        prelude: Vec::new(),
+      }
     }
+  }
+
+  /// Collect the run of content-bearing comment lines immediately above the
+  /// doc comment that `take_doc_comment` just popped, returned in source
+  /// order. Nothing is popped: these are ordinary comment items.
+  ///
+  /// The run terminates at the first of: a bare `#` line, a blank line, a
+  /// non-comment item, or the start of the file — see `Recipe::doc_prelude`.
+  fn take_doc_prelude(&self) -> Vec<String> {
+    let mut prelude = Vec::new();
+
+    // Every source line contributes its item followed by an `Item::Newline`,
+    // so a comment on a line of its own is the pair `[Comment, Newline]` and
+    // the scan walks backwards two items at a time.
+    let mut end = self.items.len();
+
+    while end >= 2 {
+      if !matches!(self.items[end - 1], Item::Newline) {
+        break;
+      }
+
+      let Item::Comment(contents) = &self.items[end - 2] else {
+        break;
+      };
+
+      // A comment with no line boundary before it is a trailing comment on
+      // the item it shares a line with, not a comment line of its own. This
+      // mirrors the third-from-end check in `take_doc_comment`, which is what
+      // keeps `x := y # foo` from becoming the doc comment of a following
+      // recipe.
+      if end >= 3 && !matches!(self.items[end - 3], Item::Newline) {
+        break;
+      }
+
+      let text = contents[1..].trim();
+
+      // A bare `#` is the conventional separator between a block of prose and
+      // the one-line summary below it, so it ends the run.
+      if text.is_empty() {
+        break;
+      }
+
+      prelude.push(text.into());
+
+      end -= 2;
+    }
+
+    prelude.reverse();
+
+    prelude
   }
 
   /// Parse a justfile, consumes self
@@ -529,7 +612,10 @@ impl<'run, 'src> Parser<'run, 'src> {
             ],
           )?;
 
-          let doc = self.take_doc_comment(&attributes);
+          // Modules have no `doc_prelude`: `--list` renders submodules from
+          // this `doc` alone, and the orphan-summary lint is scoped to
+          // recipes.
+          let doc = self.take_doc_comment(&attributes).doc;
 
           let private = attributes.contains(AttributeDiscriminant::Private);
 
@@ -1260,13 +1346,14 @@ impl<'run, 'src> Parser<'run, 'src> {
     let private =
       name.lexeme().starts_with('_') || attributes.contains(AttributeDiscriminant::Private);
 
-    let doc = self.take_doc_comment(&attributes);
+    let DocComment { doc, prelude } = self.take_doc_comment(&attributes);
 
     Ok(Recipe {
       attributes,
       body,
       dependencies,
       doc,
+      doc_prelude: prelude,
       file_depth: self.file_depth,
       import_offsets: self.import_offsets.clone(),
       module_path: None,
@@ -2088,6 +2175,134 @@ mod tests {
       bar:
     ",
     tree: (justfile (comment "# foo") (recipe bar)),
+  }
+
+  /// Parse `text` and return the `doc` and `doc_prelude` of its last recipe.
+  #[track_caller]
+  fn last_recipe_doc(text: &str) -> (Option<String>, Vec<String>) {
+    let tokens = Lexer::test_lex(text).expect("lexing failed");
+
+    let ast = Parser::parse_tokens(&mut Numerator::new(), &tokens).expect("parsing failed");
+
+    let recipe = ast
+      .items
+      .iter()
+      .filter_map(|item| match item {
+        Item::Recipe(recipe) => Some(recipe),
+        _ => None,
+      })
+      .next_back()
+      .expect("justfile contained no recipes");
+
+    (recipe.doc.clone(), recipe.doc_prelude.clone())
+  }
+
+  macro_rules! doc_prelude_test {
+    (
+      name:    $name:ident,
+      text:    $text:expr,
+      doc:     $doc:expr,
+      prelude: [$($prelude:expr),* $(,)?],
+    ) => {
+      #[test]
+      fn $name() {
+        let want_prelude: Vec<String> = vec![$($prelude.to_owned()),*];
+        let (doc, prelude) = last_recipe_doc($text);
+        assert_eq!(doc.as_deref(), $doc);
+        assert_eq!(prelude, want_prelude);
+      }
+    };
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_absent,
+    text:    "baz:\n",
+    doc:     None,
+    prelude: [],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_single_comment,
+    text:    "# c\nbaz:\n",
+    doc:     Some("c"),
+    prelude: [],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_two_contiguous_comments,
+    text:    "# a\n# b\nbaz:\n",
+    doc:     Some("b"),
+    prelude: ["a"],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_three_contiguous_comments,
+    text:    "# a\n# b\n# c\nbaz:\n",
+    doc:     Some("c"),
+    prelude: ["a", "b"],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_bare_hash_terminates,
+    text:    "# a\n# b\n#\n# c\nbaz:\n",
+    doc:     Some("c"),
+    prelude: [],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_whitespace_only_comment_terminates,
+    text:    "# a\n#   \n# c\nbaz:\n",
+    doc:     Some("c"),
+    prelude: [],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_blank_line_terminates,
+    text:    "# a\n# b\n\n# c\nbaz:\n",
+    doc:     Some("c"),
+    prelude: [],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_assignment_terminates,
+    text:    "x := 'y'\n# a\n# b\nbaz:\n",
+    doc:     Some("b"),
+    prelude: ["a"],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_recipe_terminates,
+    text:    "# a\nfoo:\n# b\n# c\nbaz:\n",
+    doc:     Some("c"),
+    prelude: ["b"],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_trailing_comment_is_not_a_prelude,
+    text:    "x := 'y' # a\n# b\nbaz:\n",
+    doc:     Some("b"),
+    prelude: [],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_entries_are_trimmed,
+    text:    "#    a   \n# b\nbaz:\n",
+    doc:     Some("b"),
+    prelude: ["a"],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_doc_attribute_overrides,
+    text:    "# a\n# b\n[doc('x')]\nbaz:\n",
+    doc:     Some("x"),
+    prelude: [],
+  }
+
+  doc_prelude_test! {
+    name:    doc_prelude_empty_doc_attribute_overrides,
+    text:    "# a\n# b\n[doc]\nbaz:\n",
+    doc:     None,
+    prelude: [],
   }
 
   test! {
