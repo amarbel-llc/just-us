@@ -235,8 +235,11 @@ impl<'src> Justfile<'src> {
             &invocation.arguments,
             config,
             events,
-            0,    // depth: top-level invocation
-            None, // parent_tp: top-level has no parent
+            0, // depth: top-level invocation
+            // parent_tp: top-level recipes nest under the harness's
+            // CRAP_PARENT node when ambient-attached (crap RFC 0002
+            // §7); otherwise they have no parent.
+            events.root_parent(),
             false,
             overrides,
             &ran,

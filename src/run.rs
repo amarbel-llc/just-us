@@ -6,6 +6,17 @@ pub fn run(args: impl Iterator<Item = impl Into<OsString> + Clone>) -> Result<()
   #[cfg(windows)]
   nu_ansi_term::enable_ansi_support().ok();
 
+  // A CRAP sink server (crap RFC 0002 §6) is this same binary
+  // re-exec'd with a marker by `crap_attach::birth`. Route into the
+  // serve loop before any argument or justfile processing.
+  #[cfg(unix)]
+  if crap_serve::enabled() {
+    return match crap_serve::serve() {
+      EXIT_SUCCESS => Ok(()),
+      code => Err(code),
+    };
+  }
+
   let arguments = Arguments::try_parse_from(args).map_err(|err| {
     err.print().ok();
     err.exit_code()
