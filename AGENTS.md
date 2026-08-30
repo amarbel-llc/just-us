@@ -26,6 +26,18 @@ same terms as `--events-fd`, and it is strictly additive: `doc`,
 `--list`, and `--fmt` are unchanged, and the JSON key is omitted when
 empty.
 
+A third fork-only addition builds on `doc_prelude`: the recipe
+**model**, `just --dump --dump-format model`
+(`docs/features/0003-*`). It is a normalized, flat projection of the
+compiled justfile — bare recipe names plus module paths, all module
+recipes flattened, resolved dependency namepaths, `doc_prelude`,
+groups, and source positions — built so the conformist `justfile-*`
+linters read facts by field lookup instead of reconstructing them
+from `--dump-format json` with jq (conformist#85, #89). It is a pure
+projection in a NEW module (`src/recipe_model.rs`) with zero new
+fields on the churny AST structs, so it adds little resync burden;
+the schema is a versioned cross-repo contract conformist pins.
+
 ## Versioning
 
 The fork versions independently of upstream (its own `0.x` line, not
@@ -101,6 +113,11 @@ side unless upstream changed something load-bearing:
   `doc_prelude` field and the parser's prelude capture — fork-only,
   and in three files upstream churns constantly; the `Recipe` struct
   literals in particular conflict on any upstream field addition)
+- `src/recipe_model.rs` and `tests/model.rs` (the recipe model —
+  fork-only, new files, so they don't conflict; but `src/lib.rs`
+  (module declaration + re-export), `src/dump_format.rs` (the `Model`
+  variant), and `src/subcommand.rs` (the dump match arm) each carry a
+  small fork insertion that can conflict on upstream churn)
 
 ## CI / workflows
 

@@ -332,6 +332,11 @@ impl Subcommand {
           .map_err(|source| Error::DumpJson { source })?;
         println!();
       }
+      DumpFormat::Model => {
+        serde_json::to_writer(io::stdout(), &RecipeModel::new(&compilation.justfile))
+          .map_err(|source| Error::DumpJson { source })?;
+        println!();
+      }
       DumpFormat::Just => print!(
         "{}",
         compilation

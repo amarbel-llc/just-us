@@ -78,6 +78,7 @@ pub(crate) use {
     ran::Ran,
     range_ext::RangeExt,
     recipe::Recipe,
+    recipe_model::RecipeModel,
     recipe_resolver::RecipeResolver,
     recipe_signature::RecipeSignature,
     reference::Reference,
@@ -273,6 +274,7 @@ mod positional;
 mod ran;
 mod range_ext;
 mod recipe;
+mod recipe_model;
 mod recipe_resolver;
 mod recipe_signature;
 mod reference;

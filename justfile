@@ -188,6 +188,19 @@ debug-events-fd *args='hello':
   @printf 'hello: dep\n  @echo hello-from-recipe\n\ndep:\n  @echo dep-output\n' > .tmp/events-test/justfile
   bash -c 'exec 3>&1 1>&2; ./target/debug/just --events-fd 3 --justfile .tmp/events-test/justfile {{args}}'
 
+# Runs target/debug/just (see build-cargo) against a self-provisioned
+# mod-import fixture and pretty-prints the recipe model, so the flat
+# model (bare name + module path, resolved deps, module recipes,
+# doc_prelude) can be eyeballed by hand.
+#
+# smoke-check --dump-format model against a mod-import fixture (FDR 0003)
+[group: 'debug']
+debug-model:
+  @mkdir -p .tmp/model-test/zz-explore
+  @printf '# exploration recipes\nmod explore "zz-explore/justfile"\n\n# the default aggregate\n# run build then test\ndefault: build test\n\n# Build the release binary and\n# strip it\nbuild:\n\t@echo building\n\n# run the tests\n[group("test")]\ntest: build\n\t@echo testing\n\n_helper:\n\t@echo helper\n' > .tmp/model-test/justfile
+  @printf '# poke at internals and\n# see what happens\ndebug-foo:\n\t@echo foo\n\n# a clean explorer\nexplore-bar: debug-foo\n\t@echo bar\n' > .tmp/model-test/zz-explore/justfile
+  ./target/debug/just --justfile .tmp/model-test/justfile --dump --dump-format model | jq .
+
 [group: 'debug']
 watch-cargo +args='ltest':
   cargo watch --clear --exec '{{ args }}'

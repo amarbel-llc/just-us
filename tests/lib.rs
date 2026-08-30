@@ -94,6 +94,7 @@ mod list;
 mod logical_operators;
 mod man;
 mod misc;
+mod model;
 mod modules;
 mod multibyte_char;
 mod newline_escape;
