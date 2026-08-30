@@ -62,8 +62,8 @@ stable — the schema version rides inside the payload, never in the token.
 |---|---|---|
 | `schema` | string | Stable identifier: `"just-us.recipe-model"`. |
 | `version` | int | Schema version (currently `1`). Additive fields do not bump it; a breaking change does. |
-| `source` | string | Absolute path of the ROOT justfile. The anchor a consumer needs to identify the root justfile even when it defines no recipes of its own (only `mod` imports), where no `recipes[]` entry would carry it. |
-| `root_default` | string \| null | Namepath of the ROOT justfile's default recipe (the one bare `just` runs), or null. |
+| `source` | string | Absolute path of the ROOT justfile — the completeness counterpart to `modules[].source`, so the model names the root file even when the root defines only `mod` imports and no recipes of its own (the one case where no `recipes[]` entry carries the root path). Not required to identify the default recipe — see `root_default`. |
+| `root_default` | string \| null | Namepath of the ROOT justfile's default recipe (the one bare `just` runs), or null. This is the behavior-preserving swap for the raw dump's `.first` (`Justfile::default`): the `[default]`-attributed recipe if any, else the lowest-line root recipe. A consumer's "the first recipe must be `default`" rule is exactly `root_default == "default"` — never reconstruct "first" from `line`/`source`, which would disagree with `just` in the `[default]`-attribute case. |
 | `recipes` | array | Every recipe, across the root and all modules, **flattened**, sorted by `namepath`. |
 | `modules` | array | Every submodule, as data (the root is not included), sorted by `path`. |
 
