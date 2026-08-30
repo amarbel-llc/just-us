@@ -229,6 +229,57 @@ Note `debug-foo` reads `name: "debug-foo"` with `module: ["explore"]`
 (conformist#89), and `explore-bar`'s dependency resolves to
 `explore::debug-foo` rather than a bare `debug-foo`.
 
+## Consumers live in the fork
+
+The model's consumers are the eight `justfile-*` conformist linters, and
+they live **in this repo**, not in conformist:
+
+- `nix/linters/justfile-{recipe-names,task-hierarchy,recipe-descriptions,
+  debug-recipes,leaf-noun,aggregate-comments,default}.nix` — the seven
+  that read the model, each a thin jq filter over the shared helper.
+- `nix/linters/justfile-orphan-summary.nix` — the eighth, reading the
+  model's `doc_prelude` (it predates the transplant; see
+  [FDR 0002](0002-doc-prelude.md)).
+- `nix/justfile-model.nix` — the `mkModelCheck` helper: the schema+version
+  pin, the shared jq prelude, and the eng taxonomy (`isLeaf`/`isAggregate`/
+  `verb`) defined over the model's raw signals. **This is where the policy
+  lives** — the model stays DATA-only (above), and the taxonomy that turns
+  `has_body`/`dependencies`/`name` into leaf/aggregate/verb decisions is
+  here, in the fork, next to the data it reads.
+- `nix/justfile-common.nix` — the single shared, mandatory
+  `linters.justfile-common.justPackage` option every one of the eight reads.
+- `nix/presets/justfile.nix` — the roster.
+
+They are exported system-independently as
+`lib.conformistLinters.justfile-<name>` (eight) and
+`lib.conformistPresets.justfile` (the roster). An adopter wires the whole
+family in one import plus one setting:
+
+    imports = [ just-us.lib.conformistPresets.justfile ];
+    linters.justfile-common.justPackage = just-us.packages.${system}.default;
+
+The coupling lives here because the linters need the fork's binary, and
+conformist must stay strictly upstream of its consumers — it takes no
+just-us flake input. Same arrangement as purse-first's
+`lib.conformistLinters.dewey-*`.
+
+### The in-tree paths are a consumption contract
+
+conformist has no just-us flake input, so it cannot reach those flake
+outputs. It self-lints its own justfile by **fixed-output-fetching just-us
+source** (rev + hash) and importing the modules by their in-tree path —
+`import "${justUsSrc}/nix/linters/justfile-recipe-names.nix"` and so on.
+The paths below are therefore load-bearing for conformist, and moving any
+of them is a **coordinated breaking change**, announced to the conformist
+maintainers before it lands:
+
+| what | path |
+|---|---|
+| the eight linter modules | `nix/linters/justfile-<name>.nix` |
+| the shared-option module | `nix/justfile-common.nix` |
+| the `mkModelCheck` helper | `nix/justfile-model.nix` |
+| the roster | `nix/presets/justfile.nix` |
+
 ## Limitations
 
 - **Fork-only.** Upstream `just` has no `model` dump format. A consumer

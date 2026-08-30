@@ -84,13 +84,24 @@ linters (agents-md, justfile-default, justfile-orphan-summary).
   key derivation) supports Rust repos.
 - `lint-clippy` is red on fork code (just-us#17) and lives only in the
   `ci` aggregate until clean.
-- `justfile-orphan-summary` is the fork's OWN linter, not one of
-  conformist's: it lives in `nix/linters/`, is dogfooded here, and is
-  exported for downstream repos as
-  `lib.conformistLinters.justfile-orphan-summary`. It reads the
-  fork-only `doc_prelude` field, so its `justPackage` MUST be a
-  just-us build — against an upstream `just` the key is never emitted
-  and the check passes vacuously. No repair: the fix is editorial.
+- The **eight `justfile-*` conformist linters live in this repo**, not
+  in conformist (`nix/linters/justfile-*.nix`): the seven that read the
+  recipe model (`--dump-format model`) plus `justfile-orphan-summary`
+  (`doc_prelude`). They were transplanted here because they need the
+  fork's binary; conformist takes no just-us input and instead
+  fixed-output-fetches just-us source to self-lint. The fork exports
+  them as `lib.conformistLinters.justfile-<name>` and a
+  `lib.conformistPresets.justfile` roster; the eng POLICY (the
+  aggregate/leaf taxonomy, verb list) lives in `nix/justfile-model.nix`
+  over the model's DATA. All eight read one shared, mandatory
+  `linters.justfile-common.justPackage` (`nix/justfile-common.nix`) —
+  it MUST be a just-us build or the checks fail loudly / (for
+  orphan-summary) pass vacuously. See `docs/features/0003-recipe-model.md`
+  ("Consumers live in the fork"); the in-tree paths there are a
+  consumption contract for conformist's FOD. Only orphan-summary is
+  dogfooded in this repo's own `flake.nix` for now (the upstream-heritage
+  demo recipes are non-conformant, and conformist still ships the seven
+  until its half lands).
 
 ## Upstream resyncs
 

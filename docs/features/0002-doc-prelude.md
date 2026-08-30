@@ -154,19 +154,38 @@ The linter ships from just-us rather than conformist because it must
 run the fork's binary — an upstream `just` never emits the key and
 the check would pass vacuously. It is exported as the
 system-independent module path
-`lib.conformistLinters.justfile-orphan-summary`, and a downstream
-repo wires it alongside conformist's own presets:
+`lib.conformistLinters.justfile-orphan-summary`, one of the eight
+`justfile-*` linters just-us exports (see
+[FDR 0003](0003-recipe-model.md), "Consumers live in the fork"). A
+downstream repo wires the whole family in one import plus one setting:
 
-    imports = [ just-us.lib.conformistLinters.justfile-orphan-summary ];
-    linters.justfile-orphan-summary.enable = true;
-    linters.justfile-orphan-summary.justPackage =
+    imports = [ just-us.lib.conformistPresets.justfile ];
+    linters.justfile-common.justPackage =
       just-us.packages.${system}.default;
 
-`justPackage` is mandatory and has no default precisely because the
-exported path cannot close over a system-specific derivation, and
-because defaulting it to `pkgs.just` would silently disable the rule.
+As of the recipe-model transplant (FDR 0003), orphan-summary reads the
+model — `just --dump --dump-format model` — rather than
+`--dump-format json`, so `doc_prelude` reaches it as a normalized field
+that is carried for **module** recipes too; the old json form read only
+the root `.recipes` and silently skipped `mod`-imported recipes.
 
-just-us dogfoods the linter in its own `flake.nix`. The fleet rollout
+`justPackage` for the family is the shared, mandatory
+`linters.justfile-common.justPackage`, which has no default precisely
+because the exported paths cannot close over a system-specific
+derivation, and because defaulting it to `pkgs.just` would make
+orphan-summary pass vacuously.
+
+**Deprecation.** orphan-summary retains its own per-linter
+`linters.justfile-orphan-summary.justPackage` option for back-compat —
+it is wired explicitly by conformist's eng template and by conformist's
+`//go:embed`-ed scaffold flake, so a hard removal would be a fleet-wide
+eval error in every scaffolded repo. It now **defaults to**
+`linters.justfile-common.justPackage`, so new wiring should set the
+shared option once and leave this unset; existing explicit wiring still
+wins. Removal is a later, deliberate fleet sweep once scaffolded repos
+have cycled onto the shared option.
+
+just-us dogfoods orphan-summary in its own `flake.nix`. The fleet rollout
 it enables is staged: sweep each repo's justfile comments first, then
 enable the linter, so the check never lands red.
 
