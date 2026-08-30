@@ -114,15 +114,25 @@
           linters.justfile-default.enable = true;
 
           # Dogfood the fork's own linter: no recipe may hide prose above
-          # the single comment line `just --list` prints as its
-          # description. The module is the same file this flake exports as
-          # `lib.conformistLinters.justfile-orphan-summary` (below), and
-          # `justPackage` is the just built right here, so the check reads
-          # the fork-only `doc_prelude` field rather than passing vacuously
-          # against an upstream `just`.
+          # the single comment line `just --list` prints as its description.
+          # The module is the same file this flake exports as
+          # `lib.conformistLinters.justfile-orphan-summary` (below); it now reads
+          # the recipe model via the fork-only `--dump-format model`, and
+          # `linters.justfile-common.justPackage` (the shared option every
+          # justfile-* linter reads) is the just built right here, so the check
+          # reads the fork's `doc_prelude` rather than passing vacuously against
+          # an upstream `just`.
+          #
+          # Only orphan-summary is dogfooded here for now. The rest of the roster
+          # (recipe-names, leaf-noun, aggregate-comments, ...) waits on two
+          # things: the upstream-heritage demo recipes (quine, polyglot, rule110,
+          # ...) are deliberately non-conformant, and conformist still ships its
+          # own copies of these seven, so enabling just-us's would double-declare
+          # them until conformist's half drops them and FODs this repo. Full-
+          # roster dogfooding is a follow-up synchronized with that landing.
           imports = [ ./nix/linters/justfile-orphan-summary.nix ];
           linters.justfile-orphan-summary.enable = true;
-          linters.justfile-orphan-summary.justPackage = just;
+          linters.justfile-common.justPackage = just;
         };
 
         batsLib = import ./bats.nix {
@@ -180,24 +190,47 @@
       # conformist linter module PATH carries no per-system derivation, so it
       # must not be published per system.
       #
-      # `lib.conformistLinters.justfile-orphan-summary` is the module a
-      # downstream repo imports into its own `conformist.lib.evalModule`:
+      # The eight `justfile-*` linters — the seven that read the recipe model
+      # (`--dump-format model`) plus justfile-orphan-summary (`doc_prelude`) —
+      # are the modules a downstream repo imports into its own
+      # `conformist.lib.evalModule`. Wire the whole family in one import:
       #
-      #   imports = [ just-us.lib.conformistLinters.justfile-orphan-summary ];
-      #   linters.justfile-orphan-summary.enable = true;
-      #   linters.justfile-orphan-summary.justPackage =
-      #     just-us.packages.${system}.default;
+      #   imports = [ just-us.lib.conformistPresets.justfile ];
+      #   linters.justfile-common.justPackage = just-us.packages.${system}.default;
       #
-      # `justPackage` is required precisely because the path is
-      # system-independent and cannot close over this flake's per-system `just`;
-      # the consumer supplies it, and it MUST be the fork (the rule reads the
-      # fork-only `doc_prelude` field of `just --dump --dump-format json`).
+      # or a single rule via `lib.conformistLinters.justfile-<name>` plus the same
+      # `linters.justfile-common.justPackage` setting. That shared option is
+      # MANDATORY and MUST be a just-us build: the seven model checks read a
+      # fork-only dump format a stock `just` rejects, and orphan-summary reads the
+      # fork-only `doc_prelude` field (which a stock `just` silently omits — a
+      # vacuous pass). It has no default precisely because these paths are
+      # system-independent and cannot close over this flake's per-system `just`.
       #
       # The coupling lives HERE, in the repo that owns the parser feature, and
-      # not upstream in conformist: conformist must stay strictly upstream of
-      # its consumers and must not take just-us as an input. Same arrangement as
-      # purse-first's `lib.conformistLinters.dewey-*` (purse-first#163), which
-      # keeps its dagnabit coupling in the repo that owns dagnabit.
-      lib.conformistLinters.justfile-orphan-summary = ./nix/linters/justfile-orphan-summary.nix;
+      # not upstream in conformist: conformist must stay strictly upstream of its
+      # consumers and must not take just-us as an input — it FODs just-us source
+      # instead. Same arrangement as purse-first's `lib.conformistLinters.dewey-*`
+      # (purse-first#163), which keeps its dagnabit coupling in the repo that owns
+      # dagnabit.
+      #
+      # IN-TREE PATHS ARE A CONSUMPTION CONTRACT. Because conformist has no just-us
+      # flake input, it cannot reach these flake outputs; it imports the modules
+      # by in-tree path from a fixed-output fetch of just-us source. The paths
+      # below — nix/linters/justfile-*.nix, nix/justfile-common.nix,
+      # nix/justfile-model.nix, nix/presets/justfile.nix — are therefore
+      # load-bearing for conformist: moving them is a coordinated breaking change.
+      # See docs/features/0003-recipe-model.md.
+      lib.conformistLinters = {
+        justfile-recipe-names = ./nix/linters/justfile-recipe-names.nix;
+        justfile-task-hierarchy = ./nix/linters/justfile-task-hierarchy.nix;
+        justfile-recipe-descriptions = ./nix/linters/justfile-recipe-descriptions.nix;
+        justfile-debug-recipes = ./nix/linters/justfile-debug-recipes.nix;
+        justfile-leaf-noun = ./nix/linters/justfile-leaf-noun.nix;
+        justfile-aggregate-comments = ./nix/linters/justfile-aggregate-comments.nix;
+        justfile-default = ./nix/linters/justfile-default.nix;
+        justfile-orphan-summary = ./nix/linters/justfile-orphan-summary.nix;
+      };
+
+      lib.conformistPresets.justfile = ./nix/presets/justfile.nix;
     };
 }

@@ -9,20 +9,20 @@
 #   build:
 #
 # lists as `strip it`. This check fails any recipe carrying such an orphaned
-# prelude. Whole-tree check (passes-files=false): reads recipe metadata from
-# `just --dump --dump-format json`, takes no file arguments.
+# prelude. Whole-tree check (passes-files=false): reads the native recipe model
+# via `just --dump --dump-format model`, takes no file arguments.
 # Prose origin: eng-design_patterns-justfile(7) RECIPE DESCRIPTIONS.
 #
-# The signal is the `doc_prelude` field, which is a just-us FORK feature (see
-# `src/recipe.rs`): the run of content-bearing comment lines immediately above
-# the doc-comment line, terminating at a bare `#` line, a blank line, a
-# non-comment item, or the start of file. Non-empty ⇒ the `--list` description
-# is a truncated prose fragment. Upstream `just` never emits the key, so the
-# check MUST run the fork's binary — hence the required `justPackage` option
-# (this module is a system-independent path exported from just-us's flake, so it
-# cannot close over a system-specific derivation; the consumer supplies one).
-# A stock `just` would read as zero findings, which is why the option is
-# mandatory rather than defaulting to `pkgs.just`.
+# The signal is the model's `doc_prelude` field, a just-us FORK feature (see
+# `src/recipe.rs` and docs/features/0002-doc-prelude.md): the run of
+# content-bearing comment lines immediately above the doc-comment line,
+# terminating at a bare `#` line, a blank line, a non-comment item, or the start
+# of file. Non-empty ⇒ the `--list` description is a truncated prose fragment.
+# In the model `doc_prelude` is ALWAYS present (empty list when none) and is
+# carried for module recipes too, so — unlike this check's old
+# `--dump-format json` form, which read only the root `.recipes` and silently
+# skipped `mod`-imported recipes — a module recipe's orphaned prelude is now
+# flagged (the same conformist#89 gap the seven model checks close).
 #
 # Scope: ALL recipes, leaf and aggregate. Private recipes (underscore-prefixed
 # or [private]) don't appear in `just --list` and are exempt, consistent with
@@ -46,67 +46,54 @@
 }:
 let
   cfg = config.linters.justfile-orphan-summary;
+  model = import ../justfile-model.nix { inherit pkgs lib; };
 
-  check = pkgs.writeShellApplication {
-    name = "conformist-justfile-orphan-summary";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.jq
-      cfg.justPackage
-    ];
-    text = ''
-      [ -f justfile ] || {
-        echo "justfile-orphan-summary: justfile missing at tree root" >&2
-        exit 1
-      }
-
-      # Recipes, excluding private ones, whose doc comment is preceded by an
-      # orphaned prose block. `doc_prelude` is omitted from the JSON when empty
-      # (serde skip_serializing_if), so the key is ABSENT on the common clean
-      # recipe — `// []` normalizes that to the empty list rather than letting
-      # `null` reach `length`.
-      filter='.recipes | to_entries[]
-        | select(.value.private | not)
-        | select(((.value.doc_prelude // []) | length) > 0)
-        | .key'
-
-      # Capture (not `< <(...)`) so a just/jq failure aborts loudly instead of
-      # reading as "no findings" — a check must never pass vacuously on a parse
-      # error.
-      if ! offenders=$(just --dump --dump-format json | jq -r "$filter"); then
-        echo "justfile-orphan-summary: failed to read recipes via just/jq" >&2
-        exit 2
-      fi
-
-      fail=0
-      while read -r name; do
-        [ -n "$name" ] || continue
-        echo "justfile-orphan-summary: recipe '$name' has comment lines above its doc comment; \`just --list\` shows ONLY the last comment line, so the rest is invisible and the description reads as a truncated fragment — separate the prose from the one-line summary with a bare \`#\` line (or a blank line), and make that summary a whole sentence fragment that stands alone (conformist-justfile(7) RECIPE DESCRIPTIONS)" >&2
-        fail=1
-      done <<< "$offenders"
-
-      if [ "$fail" -ne 0 ]; then
-        exit 1
-      fi
-      echo "justfile-orphan-summary: no recipe hides prose above its --list description"
+  check = model.mkModelCheck {
+    name = "justfile-orphan-summary";
+    # cfg.justPackage, NOT the shared option directly: this module keeps its own
+    # back-compat option (below) that DEFAULTS to the shared one, so old wiring
+    # setting `linters.justfile-orphan-summary.justPackage` explicitly is still
+    # honoured.
+    justPackage = cfg.justPackage;
+    okMessage = "no recipe hides prose above its --list description";
+    # Non-private recipes across the root AND all modules whose doc comment is
+    # preceded by an orphaned prose block. `doc_prelude` is always present in the
+    # model (empty list when none), so no `// []` normalization is needed.
+    filter = ''
+      recipes
+      | public
+      | .[]
+      | select((.doc_prelude | length) > 0)
+      | "recipe '\(.namepath)' has comment lines above its doc comment; `just --list` shows ONLY the last comment line, so the rest is invisible and the description reads as a truncated fragment - separate the prose from the one-line summary with a bare `#` line (or a blank line), and make that summary a whole sentence fragment that stands alone (conformist-justfile(7) RECIPE DESCRIPTIONS)"
     '';
   };
 in
 {
+  imports = [ ../justfile-common.nix ];
+
   options.linters.justfile-orphan-summary = {
     enable = lib.mkEnableOption "the no-orphaned-prose-above-a-recipe-description whole-tree check (eng-design_patterns-justfile(7), amarbel-llc/just-us)";
 
     justPackage = lib.mkOption {
       type = lib.types.package;
+      default = config.linters.justfile-common.justPackage;
+      defaultText = lib.literalExpression "config.linters.justfile-common.justPackage";
       description = ''
         The `just` package whose binary the check invokes. MUST be the just-us
         fork (amarbel-llc/just-us): the rule reads the fork-only `doc_prelude`
-        field of `just --dump --dump-format json`, and an upstream `just` never
-        emits it, so the check would pass vacuously. Deliberately has no default
-        — this module is exported from just-us's flake as a system-independent
-        path (`lib.conformistLinters.justfile-orphan-summary`) and so cannot
-        close over a system-specific derivation; the consumer sets it to
-        `just-us.packages.''${system}.default`.
+        field of `just --dump --dump-format model`, and an upstream `just` never
+        emits it (and rejects the format outright), so the check would otherwise
+        pass vacuously.
+
+        DEPRECATED in favour of the shared `linters.justfile-common.justPackage`
+        option, which every `justfile-*` linter reads. This per-linter option is
+        retained only for back-compat: it is wired explicitly by conformist's eng
+        template and by the `//go:embed`-ed scaffold flake, so removing it would
+        be a fleet-wide eval break. It now DEFAULTS to the shared option, so new
+        wiring should set `linters.justfile-common.justPackage` once for the
+        whole family and leave this unset; existing wiring that sets it
+        explicitly still wins. Slated for removal in a later, deliberate fleet
+        sweep once scaffolded repos have cycled onto the shared option.
       '';
     };
   };
