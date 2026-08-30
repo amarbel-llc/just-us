@@ -13,6 +13,7 @@ use super::*;
 struct Model {
   schema: String,
   version: u32,
+  source: String,
   root_default: Option<String>,
   recipes: Vec<ModelRecipe>,
   modules: Vec<ModelModule>,
@@ -118,6 +119,9 @@ fn schema_and_root_default() {
   assert_eq!(model.schema, "just-us.recipe-model");
   assert_eq!(model.version, 1);
   assert_eq!(model.root_default.as_deref(), Some("default"));
+  // The root anchor: the root justfile's own path.
+  assert!(model.source.ends_with("justfile"));
+  assert!(!model.source.ends_with("zz-explore/justfile"));
 }
 
 /// conformist#89: the flat list carries every recipe from the root AND the

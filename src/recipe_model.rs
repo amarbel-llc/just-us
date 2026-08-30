@@ -33,6 +33,10 @@ pub(crate) struct RecipeModel {
   /// Schema version. Additive fields do not bump it; a breaking change does.
   /// Consumers pin this and tolerate additive growth.
   pub(crate) version: u32,
+  /// Absolute path of the ROOT justfile. The root anchor a consumer needs to
+  /// identify "the root justfile" even when it defines no recipes of its own
+  /// (only `mod` imports), where no `recipes[]` entry would carry it.
+  pub(crate) source: String,
   /// Namepath of the ROOT justfile's default recipe (the one bare `just`
   /// runs), or null when the root has no default.
   pub(crate) root_default: Option<String>,
@@ -121,6 +125,7 @@ impl RecipeModel {
     Self {
       schema: SCHEMA,
       version: VERSION,
+      source: root.source.display().to_string(),
       root_default: root.default.as_ref().map(|r| r.recipe_path().to_string()),
       recipes,
       modules,

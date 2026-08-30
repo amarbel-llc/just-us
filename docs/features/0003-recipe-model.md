@@ -62,6 +62,7 @@ stable — the schema version rides inside the payload, never in the token.
 |---|---|---|
 | `schema` | string | Stable identifier: `"just-us.recipe-model"`. |
 | `version` | int | Schema version (currently `1`). Additive fields do not bump it; a breaking change does. |
+| `source` | string | Absolute path of the ROOT justfile. The anchor a consumer needs to identify the root justfile even when it defines no recipes of its own (only `mod` imports), where no `recipes[]` entry would carry it. |
 | `root_default` | string \| null | Namepath of the ROOT justfile's default recipe (the one bare `just` runs), or null. |
 | `recipes` | array | Every recipe, across the root and all modules, **flattened**, sorted by `namepath`. |
 | `modules` | array | Every submodule, as data (the root is not included), sorted by `path`. |
@@ -167,6 +168,7 @@ Root justfile importing a submodule:
     {
       "schema": "just-us.recipe-model",
       "version": 1,
+      "source": ".../justfile",
       "root_default": "default",
       "recipes": [
         {
