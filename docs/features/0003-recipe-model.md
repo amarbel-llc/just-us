@@ -280,6 +280,15 @@ maintainers before it lands:
 | the `mkModelCheck` helper | `nix/justfile-model.nix` |
 | the roster | `nix/presets/justfile.nix` |
 
+There is also a **fifth, implicit surface**: conformist does not just import
+these paths, it **builds the fork's binary** from the fetched source
+(`rustPlatform.buildRustPackage` off `${justUsSrc}/Cargo.lock`) to get the
+`just` its checks run. So a change that is invisible to just-us's own flake —
+restructuring `Cargo.lock`, or adding a build-time dependency that needs a
+`nativeBuildInputs` entry beyond `pkg-config` — can break conformist's build.
+It is not frozen, but a Cargo-level change can reach conformist; coordinate one
+that changes the build's shape.
+
 ## Limitations
 
 - **Fork-only.** Upstream `just` has no `model` dump format. A consumer
