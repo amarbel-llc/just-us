@@ -181,6 +181,11 @@
             cargo-limit
             # bin/forbid greps with rg.
             ripgrep
+            # upstream's tests/backticks.rs configures `set shell :=
+            # ['python3', '-c']`, so the cargo test suite needs python3 on PATH;
+            # without it backticks::trailing_newlines_are_stripped fails with
+            # "could not find the shell". Not otherwise used by the fork.
+            python3
           ];
         };
       }

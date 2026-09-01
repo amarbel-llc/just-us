@@ -91,7 +91,7 @@ const ROOT: &str = "
 const EXPLORE: &str = "
   # poke at internals and
   # see what happens
-  debug-foo:
+  debug-foo target=\"x\":
       @echo foo
 
   # a clean explorer
@@ -156,6 +156,15 @@ fn module_recipe_has_bare_name_and_module_path() {
   let build = model.recipe("build");
   assert_eq!(build.name, "build");
   assert!(build.module.is_empty());
+}
+
+/// Parameter names are captured in declaration order; a defaulted parameter is
+/// still listed. A recipe with no parameters carries an empty list.
+#[test]
+fn parameters_are_captured() {
+  let model = model();
+  assert_eq!(model.recipe("explore::debug-foo").parameters, ["target"]);
+  assert!(model.recipe("build").parameters.is_empty());
 }
 
 /// The raw dump drops the `mod::` qualifier from dependency entries; the model
