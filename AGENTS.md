@@ -98,10 +98,16 @@ linters (agents-md, justfile-default, justfile-orphan-summary).
   it MUST be a just-us build or the checks fail loudly / (for
   orphan-summary) pass vacuously. See `docs/features/0003-recipe-model.md`
   ("Consumers live in the fork"); the in-tree paths there are a
-  consumption contract for conformist's FOD. Only orphan-summary is
-  dogfooded in this repo's own `flake.nix` for now (the upstream-heritage
-  demo recipes are non-conformant, and conformist still ships the seven
-  until its half lands).
+  consumption contract for conformist's FOD. This repo's own `flake.nix`
+  dogfoods the exported roster (`lib.conformistPresets.justfile`) with
+  the fork's binary: `justfile-orphan-summary` and `justfile-default`
+  (which the fork's justfile passes) stay enforced; the other six are
+  opted out (`enable = false`) because the justfile carries upstream
+  heritage (the `demo` group) and many test/maintenance utility recipes
+  that don't fit those rules without an editorial sweep (tracked as
+  just-us#23). The six rules'
+  behavior is proven by `nix/justfile-linter-fixtures.nix` (33 fixtures,
+  wired into `checks` + `just test-linter-fixtures`), not the dogfood.
 
 ## Upstream resyncs
 
