@@ -10,7 +10,7 @@
 #
 # TWO ADAPTATIONS from conformist's version:
 #   1. The `lib.evalModule` call IMPORTS the just-us linter module by path
-#      (`imports = [ ../linters/${name}.nix ]`). conformist's evalModule
+#      (`imports = [ ./linters/${name}.nix ]`). conformist's evalModule
 #      auto-enumerates ITS OWN nix/linters via readDir; it does not know about
 #      this fork's modules, so each fixture brings the module under test itself.
 #   2. `needsJustUs` sets the SHARED `linters.justfile-common.justPackage`
@@ -96,7 +96,7 @@ let
         enableDefaultExcludes = false;
         # Adaptation 1: bring the fork's own module under test; conformist's
         # evalModule does not know about it.
-        imports = [ ../linters/${name}.nix ];
+        imports = [ ./linters/${name}.nix ];
         # Adaptation 2: the seven model checks read the shared
         # `linters.justfile-common.justPackage`, so inject THAT (not a per-linter
         # option). `//` is shallow, but ${name} is never "justfile-common", so

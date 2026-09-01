@@ -95,7 +95,7 @@ build-man:
   cargo lrun -- --man > man/just.1
 
 [group: 'post-build']
-test: test-cargo test-bats
+test: test-cargo test-bats test-linter-fixtures
 
 # XDG_CONFIG_HOME is scrubbed because upstream's tests/global.rs unix
 # test isolates HOME but not XDG_CONFIG_HOME, so a real
@@ -110,6 +110,17 @@ test-cargo *args='--all':
 [group: 'post-build']
 test-bats:
   nix build .#bats-default --no-link --print-build-logs
+
+# Behavioral fixtures for the eight justfile-* linters: each runs a linter's
+# compiled check against a crafted fixture tree and asserts the exit code plus,
+# on failure cases, a token from the rule's own message. This is the in-tree
+# proof the six rules the flake dogfood opts out (heritage/utility justfile)
+# still execute and catch.
+#
+# run the justfile-* linter behavioral fixtures (nix sandbox)
+[group: 'post-build']
+test-linter-fixtures:
+  nix build .#checks.{{ nix-system }}.justfile-linter-fixtures --no-link --print-build-logs
 
 # Bats lane filtered to a single file_tag.
 [group: 'post-build']

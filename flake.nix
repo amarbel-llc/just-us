@@ -106,33 +106,44 @@
           linters.shellcheck.enable = true;
           linters.shellcheck.includes = pkgs.lib.mkForce [ "www/install.sh" ];
 
-          # eng conformance linters. NOT enabled: eng-versioning (derives
-          # the version key from go.mod; Rust repos unsupported yet) and
-          # justfile-recipe-names (the upstream-heritage demo recipes are
-          # deliberately non-verb-noun).
+          # eng conformance linters. NOT enabled: eng-versioning (derives the
+          # version key from go.mod; Rust repos unsupported yet).
           linters.agents-md.enable = true;
-          linters.justfile-default.enable = true;
 
-          # Dogfood the fork's own linter: no recipe may hide prose above
-          # the single comment line `just --list` prints as its description.
-          # The module is the same file this flake exports as
-          # `lib.conformistLinters.justfile-orphan-summary` (below); it now reads
-          # the recipe model via the fork-only `--dump-format model`, and
-          # `linters.justfile-common.justPackage` (the shared option every
-          # justfile-* linter reads) is the just built right here, so the check
-          # reads the fork's `doc_prelude` rather than passing vacuously against
-          # an upstream `just`.
-          #
-          # Only orphan-summary is dogfooded here for now. The rest of the roster
-          # (recipe-names, leaf-noun, aggregate-comments, ...) waits on two
-          # things: the upstream-heritage demo recipes (quine, polyglot, rule110,
-          # ...) are deliberately non-conformant, and conformist still ships its
-          # own copies of these seven, so enabling just-us's would double-declare
-          # them until conformist's half drops them and FODs this repo. Full-
-          # roster dogfooding is a follow-up synchronized with that landing.
-          imports = [ ./nix/linters/justfile-orphan-summary.nix ];
-          linters.justfile-orphan-summary.enable = true;
+          # Dogfood the fork's full justfile-linter roster against this repo's
+          # own justfile. `lib.conformistPresets.justfile` (the module this flake
+          # exports, below) enables all eight — the seven model checks plus
+          # justfile-orphan-summary — each with `lib.mkDefault true`, so a plain
+          # `enable = false` opts one out. `justfile-common.justPackage` is the
+          # just built right here, so the checks read the fork's `--dump-format
+          # model` / `doc_prelude` rather than passing vacuously against a stock
+          # `just`. This became possible once the conformist input was bumped past
+          # its half of the transplant, which removed conformist's own copies of
+          # the seven (they used to double-declare with these).
+          imports = [ ./nix/presets/justfile.nix ];
           linters.justfile-common.justPackage = just;
+
+          # just-us is an upstream FORK: its justfile carries upstream heritage
+          # (the `demo` group — quine, polyglot, rule110, pwd — kept verbatim on
+          # purpose) and a large surface of test/maintenance utility recipes
+          # (test-filter, test-fuzz, build-man, view-man, ...). Six of the eight
+          # rules don't fit that shape without an editorial sweep of the whole
+          # justfile, so they are opted out here (plain `false` beats the roster's
+          # `mkDefault true`); the two the fork passes cleanly —
+          # justfile-orphan-summary and justfile-default — stay enforced. This
+          # dogfoods the adopter path (the exported roster, imported and run
+          # against a real justfile with the fork's own binary); the six rules'
+          # behavioral correctness is proven separately by
+          # nix/justfile-linter-fixtures.nix (wired into checks below) and by the
+          # conformist consumer. Bringing the fork's own justfile to fuller
+          # conformance — so more of these can be re-enabled — is tracked
+          # editorial follow-up, not a blocker here.
+          linters.justfile-recipe-names.enable = false; # heritage demo names are non-verb-noun
+          linters.justfile-leaf-noun.enable = false; # heritage demos are bare verbs
+          linters.justfile-task-hierarchy.enable = false; # many legitimately-orphan test/util leaves
+          linters.justfile-recipe-descriptions.enable = false; # heritage + utility leaves undocumented
+          linters.justfile-debug-recipes.enable = false; # some debug/explore recipes undocumented
+          linters.justfile-aggregate-comments.enable = false; # default/lint/ci carry informative comments
         };
 
         batsLib = import ./bats.nix {
@@ -150,6 +161,22 @@
               || baseNameOf path == "setup_suite.bash";
           };
         };
+
+        # Behavioral fixtures for the eight justfile-* linters: each runs a
+        # linter's compiled check against a crafted fixture tree and asserts the
+        # exit code (and, on failure cases, a token from the rule's own message).
+        # This is the in-tree proof that every rule executes and catches, which
+        # the dogfood above deliberately does not exercise for the six opted-out
+        # rules. `lib` is conformist's evalModule library; `justPackage` is the
+        # fork built here. (This can only evaluate now that the conformist input
+        # was bumped past its half of the transplant — before that, conformist
+        # readDir-enumerated its own copies of the seven and importing this fork's
+        # collided on `settings.linter.<name>.command`.)
+        justfileLinterFixtures = import ./nix/justfile-linter-fixtures.nix {
+          inherit pkgs;
+          lib = inputs.conformist.lib;
+          justPackage = just;
+        };
       in
       {
         packages = batsLib.batsLaneOutputs // {
@@ -159,6 +186,7 @@
         checks = {
           bats-default = batsLib.batsLaneOutputs.bats-default;
           formatting = conformistEval.config.build.check self;
+          justfile-linter-fixtures = justfileLinterFixtures.justfile-linter-fixtures;
         };
 
         # `nix fmt` — rewrites the worktree with every formatter and
