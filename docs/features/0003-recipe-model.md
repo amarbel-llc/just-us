@@ -36,9 +36,12 @@ The decision (from sasha, dispatched via eng/loud-sycamore): **lift the
 data extraction into the fork.** just-us already diverged once to expose
 parser data jq cannot see — the `doc_prelude` field
 ([FDR 0002](0002-doc-prelude.md)). This generalizes that move: a native,
-complete, normalized recipe **model** that conformist consumes by field
-lookup. conformist stays the policy engine (verb allowlists, lifecycle
-groups, the aggregate/leaf taxonomy); it stops reconstructing data.
+complete, normalized recipe **model** its consumers read by field
+lookup instead of reconstructing it. The model is DATA only; the eng
+policy that reads it — the verb allowlist, lifecycle groups, the
+aggregate/leaf taxonomy — lives with the linters in the fork (see
+"Consumers live in the fork"), while conformist owns the doctrine
+(`conformist-justfile(7)`), not the enforcer modules.
 
 The long-term horizon — explicitly **not** built here — is `just --lint`
 with policy declared via `set` directives at the top of a justfile. The
@@ -112,9 +115,11 @@ unambiguous root one; a consumer wanting "is this the root default" tests
 The model is **DATA only**. It deliberately does not emit a derived
 `is_aggregate`, `is_leaf`, or `verb` — those are policy. It carries the
 raw signals (`has_body`, `dependencies`, bare `name`, `groups`,
-`attributes`) and conformist applies the eng taxonomy. This keeps the
-contract stable across policy changes and keeps the `just --lint` horizon
-reachable.
+`attributes`) and the fork's `mkModelCheck` helper applies the eng
+taxonomy over them (conformist owns the doctrine, `conformist-justfile(7)`,
+not the enforcer modules — see "Consumers live in the fork"). This keeps
+the contract stable across policy changes and keeps the `just --lint`
+horizon reachable.
 
 ## How the three defects become structurally impossible
 
