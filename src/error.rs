@@ -148,6 +148,9 @@ pub(crate) enum Error<'src> {
     path: PathBuf,
     io_error: io::Error,
   },
+  McpIo {
+    io_error: io::Error,
+  },
   MissingImportFile {
     path: Token<'src>,
   },
@@ -681,6 +684,9 @@ impl ColorDisplay for Error<'_> {
           "failed to read justfile at `{}`: {io_error}",
           path.display()
         )?;
+      }
+      McpIo { io_error } => {
+        write!(f, "I/O error in `just mcp`: {io_error}")?;
       }
       MissingImportFile { .. } => write!(f, "could not find source file for import")?,
       MissingModuleFile { module } => {

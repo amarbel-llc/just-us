@@ -256,6 +256,7 @@ mod line;
 mod list;
 mod load_dotenv;
 mod loader;
+mod mcp_serve;
 mod modulepath;
 mod name;
 mod namepath;

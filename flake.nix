@@ -77,6 +77,30 @@
           };
         };
 
+        # just-us-clown-plugin stages a clown plugin (clown-plugin-protocol(7) /
+        # clown-json(5)) that contributes this repo's public justfile recipes
+        # (name + doc line, no filtering) into the agent's dynamic system
+        # prompt via `just --mcp` (docs/features/0005). Mirrors
+        # cutting-garden's `cuttingGardenClownPlugin`: the source-controlled
+        # `clown.json.in` / `plugin.json.in` carry `@JUST_US@` / `@version@`
+        # placeholders, substituted here so the manifest can't drift from the
+        # binary it points at. eng's `mkCircus`/`lib/circus.nix` mounts a
+        # plugin by consuming this derivation's
+        # share/purse-first/just-us/{.claude-plugin/plugin.json,clown.json}
+        # (see docs/features/0004).
+        justUsClownPlugin = pkgs.runCommand "just-us-clown-plugin" { } ''
+          pluginRoot=$out/share/purse-first/just-us
+          mkdir -p $pluginRoot/.claude-plugin
+          substitute \
+            ${./plugins/just-us/.claude-plugin/plugin.json.in} \
+            $pluginRoot/.claude-plugin/plugin.json \
+            --replace-fail '@version@' '${package.version}'
+          substitute \
+            ${./plugins/just-us/clown.json.in} \
+            $pluginRoot/clown.json \
+            --replace-fail '@JUST_US@' '${just}/bin/just'
+        '';
+
         conformistEval = inputs.conformist.lib.evalModule pkgs {
           package = inputs.conformist.packages.${system}.default;
 
@@ -181,6 +205,9 @@
       {
         packages = batsLib.batsLaneOutputs // {
           default = just;
+
+          # Clown plugin closure for eng's mkCircus (docs/features/0004).
+          just-us-clown-plugin = justUsClownPlugin;
         };
 
         checks = {

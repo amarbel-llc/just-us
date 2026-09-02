@@ -434,6 +434,12 @@ pub(crate) struct Subcommand {
   )]
   pub(crate) man: bool,
   #[arg(
+    help = "Serve recipe metadata as an MCP server on stdio (newline-delimited JSON-RPC)",
+    help_heading = Self::HEADING,
+    long,
+  )]
+  pub(crate) mcp: bool,
+  #[arg(
     help = "Execute <REQUEST>. For internal testing purposes only. May be changed or removed at \
             any time.",
     help_heading = Self::HEADING,

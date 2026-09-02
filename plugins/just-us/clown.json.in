@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "stdioServers": {
+    "just-us": {
+      "command": "@JUST_US@",
+      "args": ["--mcp"],
+      "systemPrompt": true
+    }
+  }
+}

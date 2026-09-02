@@ -1,0 +1,10 @@
+{
+  "name": "just-us",
+  "description": "Contribute this repo's public justfile recipes (name + doc line) into the agent's system prompt via `just --mcp` (docs/features/0005-dynamic-system-prompt-recipe-roster.md).",
+  "version": "@version@",
+  "keywords": [
+    "just",
+    "justfile",
+    "mcp"
+  ]
+}

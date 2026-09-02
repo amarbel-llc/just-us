@@ -212,6 +212,8 @@ impl Config {
       })
     } else if arguments.subcommand.man {
       Ok(Subcommand::Man)
+    } else if arguments.subcommand.mcp {
+      Ok(Subcommand::Mcp)
     } else if let Some(request) = arguments.subcommand.request.as_deref() {
       Ok(Subcommand::Request {
         request: serde_json::from_str(request)
