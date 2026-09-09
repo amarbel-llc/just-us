@@ -31,8 +31,21 @@ fn enforce_version_env() {
   );
 }
 
+// Build-time pin for `run_recipe`'s async (ringmaster) mode
+// (docs/features/0006 addendum). Set by flake.nix's `just` derivation to
+// the store path of clown's `ringmaster` package; unset for a plain
+// `cargo build`, in which case `mcp_serve.rs` falls back to a PATH
+// lookup at runtime.
+fn forward_ringmaster_bin() {
+  println!("cargo::rerun-if-env-changed=RINGMASTER_BIN");
+  if let Ok(path) = std::env::var("RINGMASTER_BIN") {
+    println!("cargo::rustc-env=RINGMASTER_BIN={path}");
+  }
+}
+
 fn main() {
   enforce_version_env();
+  forward_ringmaster_bin();
 
   let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
   let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap();

@@ -3,10 +3,18 @@
 # `just --mcp`'s `tools` capability (docs/features/0006):
 # `list_recipes`/`show_recipe`/`run_recipe`/`dump_justfile`/`list_variables`
 # on the same stdio MCP server that already answers `prompts/get
-# system-prompt-append` (docs/features/0005). `run_recipe` reuses the
-# `--events-fd` capture path (RFC 0002) with an in-memory sink instead of
-# a real fd, so a recipe's child stdout/stderr never leaks onto the
-# server's own stdout — the JSON-RPC channel.
+# system-prompt-append` (docs/features/0005). `run_recipe` always
+# executes as a real subprocess (wrapped in `nix develop -c` when a
+# flake.nix is present) rather than in-process, so it can support
+# `impure`/`timeout`/`async` uniformly — see the 0006 addendum. Devshell
+# wrapping and full async job-completion/wake behavior have real
+# environmental dependencies (a real flake.nix + network, a live clown
+# session) that don't fit this hermetic sandbox well; they are verified
+# by manual smoke test instead (see the addendum's Verification
+# section). What's covered here: sync execution still works, timeout
+# kills a long-running recipe, and async returns a job id promptly via a
+# real `ringmaster start` call (on PATH in this sandbox — see bats.nix)
+# without waiting for the recipe to finish.
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/common.bash"
@@ -145,4 +153,38 @@ EOF
     '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"nope"}}}'
   assert_success
   [[ $output == *'"isError":true'* ]] || fail "unknown recipe should set isError: $output"
+}
+
+@test "--mcp: run_recipe timeout kills a long-running recipe" {
+  cat > justfile <<'EOF'
+slow:
+    echo starting
+    sleep 5
+EOF
+
+  run timeout --preserve-status 10s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"slow","timeout":"1s"}}}'
+  assert_success
+  [[ $output == *'"isError":true'* ]] || fail "timed-out recipe should set isError: $output"
+  [[ $output == *'timed out'* ]] || fail "timeout message missing: $output"
+}
+
+@test "--mcp: run_recipe async returns a job id promptly without waiting for completion" {
+  cat > justfile <<'EOF'
+slow:
+    sleep 5
+EOF
+
+  # Keep stdin open past the response so the server (and its detached
+  # async thread) doesn't exit the instant this one line is answered —
+  # a process exit kills any in-flight background job, same as any
+  # other process. Real clown-hosted usage keeps stdin open for the
+  # session's lifetime; this only needs to outlive the tool call itself,
+  # not the recipe's full 5s runtime.
+  run --separate-stderr timeout --preserve-status 5s bash -c \
+    '(printf "%s\n" "$1"; sleep 2) | "$0" --mcp' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"slow","async":true}}}'
+  assert_success
+  [[ $output == *'\"job_id\"'* ]] || fail "async run_recipe did not return a job_id: $output"
+  [[ $output != *'"isError"'* ]] || fail "dispatching an async job should not itself be an error: $output"
 }

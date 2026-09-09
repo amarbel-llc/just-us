@@ -1,6 +1,9 @@
 use super::*;
 
-use {crate::recipe_model::ModelRecipe, std::io::BufRead};
+use {
+  crate::recipe_model::ModelRecipe,
+  std::{io::BufRead, io::Read, time::Duration},
+};
 
 /// The clown plugin protocol's fixed prompt name for dynamic
 /// system-prompt contribution (RFC 0002 §5, docs/features/0005). MUST
@@ -168,7 +171,7 @@ fn tools_list_result() -> serde_json::Value {
       },
       {
         "name": "run_recipe",
-        "description": "Run one justfile recipe and return its captured stdout/stderr.",
+        "description": "Run one justfile recipe as a subprocess (wrapped in `nix develop -c` when a flake.nix is present) and return its captured stdout/stderr.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -180,6 +183,18 @@ fn tools_list_result() -> serde_json::Value {
               "type": "array",
               "items": { "type": "string" },
               "description": "Positional arguments, in declared-parameter order (just has no named-argument CLI syntax).",
+            },
+            "impure": {
+              "type": "boolean",
+              "description": "Pass --impure to `nix develop`. No effect when there is no flake.nix.",
+            },
+            "timeout": {
+              "type": "string",
+              "description": "Kill the recipe if it runs longer than this, e.g. \"25m\", \"90s\", \"2h\". No timeout if omitted.",
+            },
+            "async": {
+              "type": "boolean",
+              "description": "Return a ringmaster job id immediately instead of blocking until the recipe finishes. The caller observes completion via ringmaster's own job_wait/job_status.",
             },
           },
           "required": ["recipe"],
@@ -257,7 +272,38 @@ fn tools_call(
         })
         .unwrap_or_default();
 
-      ok(id, run_recipe(config, search, compilation, recipe, &args))
+      let impure = arguments
+        .get("impure")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+      let timeout = match arguments.get("timeout").and_then(serde_json::Value::as_str) {
+        Some(input) => match parse_duration(input) {
+          Ok(duration) => Some(duration),
+          Err(message) => return ok(id, tool_error_text(message)),
+        },
+        None => None,
+      };
+
+      let want_async = arguments
+        .get("async")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+      let mut invocation = Vec::with_capacity(args.len() + 1);
+      invocation.push(recipe.to_owned());
+      invocation.extend(args);
+
+      let justfile_dir = search.working_directory.clone();
+
+      ok(
+        id,
+        if want_async {
+          run_recipe_async(justfile_dir, impure, invocation, recipe, timeout)
+        } else {
+          run_recipe_sync(recipe_command(justfile_dir, impure, &invocation), timeout)
+        },
+      )
     }
     "dump_justfile" => ok(
       id,
@@ -302,110 +348,269 @@ fn tool_error_text(message: String) -> serde_json::Value {
   })
 }
 
-/// A `Write` sink over a shared buffer, so `run_recipe` can hand
-/// `EventSink::from_writer` something it owns while keeping a handle to
-/// read the captured bytes back afterward.
-#[derive(Clone, Default)]
-struct CaptureBuffer(Arc<Mutex<Vec<u8>>>);
-
-impl io::Write for CaptureBuffer {
-  fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-    self.0.lock().unwrap().extend_from_slice(buf);
-    Ok(buf.len())
-  }
-
-  fn flush(&mut self) -> io::Result<()> {
-    Ok(())
+/// The `ringmaster` binary to shell out to for `run_recipe`'s async mode.
+/// Prefers the build-time pin (`RINGMASTER_BIN`, set by flake.nix's `just`
+/// derivation from clown's `ringmaster` package — see build.rs) so a
+/// nix-built `just` never depends on `ringmaster` being ambiently on
+/// PATH; falls back to a plain PATH lookup so an ad-hoc `cargo build`
+/// dev-loop still works without that input.
+fn ringmaster_command() -> Command {
+  match option_env!("RINGMASTER_BIN") {
+    Some(path) => Command::new(path),
+    None => Command::resolve("ringmaster"),
   }
 }
 
-/// Run one recipe via the exact same `Justfile::run` path
-/// `Subcommand::Run` uses, with an `EventSink` backed by an in-memory
-/// buffer instead of a real fd. `EventSink::is_active()` — not
-/// `config.events_fd` — is what gates the RFC 0002 §Suppressing
-/// Inherited stdout/stderr capture path (`src/recipe.rs`), so an active
-/// writer-backed sink is enough to keep the recipe's child stdout/stderr
-/// out of this server's own stdout, which is the MCP JSON-RPC channel.
-fn run_recipe(
-  config: &Config,
-  search: &Search,
-  compilation: &Compilation,
-  recipe: &str,
-  args: &[String],
-) -> serde_json::Value {
-  let mut arguments = Vec::with_capacity(args.len() + 1);
-  arguments.push(recipe.to_owned());
-  arguments.extend(args.iter().cloned());
+/// Parse a single-unit duration like `"25m"`, `"90s"`, `"2h"`; a bare
+/// integer is seconds. No compound forms (`"1h30m"`) in this slice —
+/// tracked as a possible future extension, not needed by the current
+/// contract (`docs/plans/...run-recipe...`).
+fn parse_duration(input: &str) -> Result<Duration, String> {
+  let input = input.trim();
 
-  let mut run_config = config.clone();
-  run_config.subcommand = Subcommand::Run {
-    arguments: arguments.clone(),
+  let (digits, unit) = match input.find(|c: char| !c.is_ascii_digit()) {
+    Some(split) => input.split_at(split),
+    None => (input, "s"),
   };
 
-  let buffer = CaptureBuffer::default();
-  let events = EventSink::from_writer(buffer.clone());
+  let value: u64 = digits
+    .parse()
+    .map_err(|_| format!("invalid duration: {input:?}"))?;
 
-  let result = compilation.justfile.run(
-    &run_config,
-    &events,
-    search,
-    &arguments,
-    &compilation.overrides,
-  );
+  let seconds = match unit {
+    "s" => value,
+    "m" => value * 60,
+    "h" => value * 60 * 60,
+    _ => {
+      return Err(format!(
+        "invalid duration unit in {input:?} (expected s, m, or h)"
+      ));
+    }
+  };
 
-  let captured = buffer.0.lock().unwrap().clone();
-  let mut content = decode_captured_output(&captured);
+  Ok(Duration::from_secs(seconds))
+}
 
-  if let Err(run_error) = result {
-    let message = run_error.color_display(Color::never()).to_string();
-    content.push(serde_json::json!({ "type": "text", "text": message }));
-    serde_json::json!({ "content": content, "isError": true })
+/// Build the `Command` that actually runs a recipe: wrapped in
+/// `nix develop [--impure] -c just <invocation>` when `justfile_dir` has
+/// its own `flake.nix` (restores devshell tools for recipes that need
+/// them, matching the retired `just-us-agents` moxin's own behavior),
+/// otherwise a direct re-invocation of this same `just` binary
+/// (`env::current_exe`, falling back to a PATH-resolved `just` if that
+/// fails) so there is no ambiguity about which `just` runs a plain
+/// recipe.
+fn recipe_command(justfile_dir: PathBuf, impure: bool, invocation: &[String]) -> Command {
+  if justfile_dir.join("flake.nix").is_file() {
+    let mut command = Command::resolve("nix");
+    command.arg("develop");
+
+    if impure {
+      command.arg("--impure");
+    }
+
+    command.arg("-c").arg("just").args(invocation);
+    command.current_dir(justfile_dir);
+    command
   } else {
-    serde_json::json!({ "content": content })
+    let program = env::current_exe().unwrap_or_else(|_| PathBuf::from("just"));
+    let mut command = Command::new(program);
+    command.args(invocation);
+    command.current_dir(justfile_dir);
+    command
   }
 }
 
-/// Pull `output` events back out of the captured NDJSON stream, grouped
-/// by stream. Current recipe execution always emits `OutputDataFormat::
-/// Utf8` (`src/recipe.rs`'s `capture_with_events` lossy-converts before
-/// emitting) — `Base64` is a wire-format provision with no producer yet,
-/// so it is read the same way rather than decoded.
-fn decode_captured_output(captured: &[u8]) -> Vec<serde_json::Value> {
-  let mut stdout = String::new();
-  let mut stderr = String::new();
+/// Block on `child`, killing it if `timeout` elapses first. `Ok(None)`
+/// means it was killed for timing out; the caller distinguishes that
+/// from a normal exit status.
+fn wait_with_timeout(
+  child: &mut process::Child,
+  timeout: Duration,
+) -> io::Result<Option<ExitStatus>> {
+  let start = Instant::now();
 
-  for line in captured.split(|&byte| byte == b'\n') {
-    if line.is_empty() {
-      continue;
+  loop {
+    if let Some(status) = child.try_wait()? {
+      return Ok(Some(status));
     }
 
-    let Ok(event) = serde_json::from_slice::<serde_json::Value>(line) else {
-      continue;
-    };
-
-    if event.get("type").and_then(serde_json::Value::as_str) != Some("output") {
-      continue;
+    if start.elapsed() >= timeout {
+      let _ = child.kill();
+      let _ = child.wait();
+      return Ok(None);
     }
 
-    let Some(data) = event.get("data").and_then(serde_json::Value::as_str) else {
-      continue;
-    };
-
-    match event.get("stream").and_then(serde_json::Value::as_str) {
-      Some("stderr") => stderr.push_str(data),
-      _ => stdout.push_str(data),
-    }
+    thread::sleep(Duration::from_millis(50));
   }
+}
+
+/// Run `command` to completion, capturing stdout/stderr the plain way
+/// (no `--events-fd`/`EventSink` involved — `run_recipe` now always
+/// executes as a real subprocess, so plain pipe capture is sufficient
+/// and there's no in-process stdout to protect).
+fn run_recipe_sync(mut command: Command, timeout: Option<Duration>) -> serde_json::Value {
+  command.stdout(Stdio::piped());
+  command.stderr(Stdio::piped());
+
+  let mut child = match command.spawn() {
+    Ok(child) => child,
+    Err(io_error) => return tool_error_text(format!("failed to start recipe: {io_error}")),
+  };
+
+  let mut stdout_pipe = child.stdout.take();
+  let mut stderr_pipe = child.stderr.take();
+
+  let stdout_thread = thread::spawn(move || {
+    let mut buffer = Vec::new();
+    if let Some(pipe) = &mut stdout_pipe {
+      let _ = pipe.read_to_end(&mut buffer);
+    }
+    buffer
+  });
+
+  let stderr_thread = thread::spawn(move || {
+    let mut buffer = Vec::new();
+    if let Some(pipe) = &mut stderr_pipe {
+      let _ = pipe.read_to_end(&mut buffer);
+    }
+    buffer
+  });
+
+  let status = match timeout {
+    Some(timeout) => wait_with_timeout(&mut child, timeout),
+    None => child.wait().map(Some),
+  };
+
+  let stdout = stdout_thread.join().unwrap_or_default();
+  let stderr = stderr_thread.join().unwrap_or_default();
 
   let mut content = Vec::new();
 
   if !stdout.is_empty() {
-    content.push(serde_json::json!({ "type": "text", "text": format!("stdout:\n{stdout}") }));
+    content.push(serde_json::json!({
+      "type": "text",
+      "text": format!("stdout:\n{}", String::from_utf8_lossy(&stdout)),
+    }));
   }
 
   if !stderr.is_empty() {
-    content.push(serde_json::json!({ "type": "text", "text": format!("stderr:\n{stderr}") }));
+    content.push(serde_json::json!({
+      "type": "text",
+      "text": format!("stderr:\n{}", String::from_utf8_lossy(&stderr)),
+    }));
   }
 
-  content
+  match status {
+    Ok(Some(status)) if status.success() => serde_json::json!({ "content": content }),
+    Ok(Some(status)) => {
+      content.push(serde_json::json!({ "type": "text", "text": format!("error: recipe exited with {status}") }));
+      serde_json::json!({ "content": content, "isError": true })
+    }
+    Ok(None) => {
+      content.push(serde_json::json!({ "type": "text", "text": "error: recipe timed out" }));
+      serde_json::json!({ "content": content, "isError": true })
+    }
+    Err(io_error) => {
+      content.push(serde_json::json!({ "type": "text", "text": format!("error: {io_error}") }));
+      serde_json::json!({ "content": content, "isError": true })
+    }
+  }
+}
+
+/// Run `invocation` in the background as a real ringmaster job producer
+/// (RFC-0009/0010/0011): `ringmaster start` allocates the job and prints
+/// its id, the recipe's own stdout/stderr are redirected straight to the
+/// job's output spool (`ringmaster spool-path`) so `ringmaster tail -f`
+/// and moxy's own `async-result` see live output exactly the way they
+/// already do for any other clown job, and `ringmaster done` on
+/// completion sends the wake. Session targeting needs no explicit
+/// parameter: `ringmaster start` resolves the session to wake from
+/// `CLOWN_SESSION_ID`, which this process inherits from the clown
+/// stdio-bridge that spawned it.
+fn run_recipe_async(
+  justfile_dir: PathBuf,
+  impure: bool,
+  invocation: Vec<String>,
+  recipe: &str,
+  timeout: Option<Duration>,
+) -> serde_json::Value {
+  let start = ringmaster_command()
+    .args(["start", "--source", "just-us", "--label", recipe])
+    .output();
+
+  let job_id = match start {
+    Ok(output) if output.status.success() => {
+      String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+    Ok(output) => {
+      return tool_error_text(format!(
+        "ringmaster start failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+      ));
+    }
+    Err(io_error) => {
+      return tool_error_text(format!("ringmaster is not available: {io_error}"));
+    }
+  };
+
+  if job_id.is_empty() {
+    return tool_error_text("ringmaster start produced no job id".to_owned());
+  }
+
+  let spool_path = ringmaster_command()
+    .args(["spool-path", &job_id])
+    .output()
+    .ok()
+    .filter(|output| output.status.success())
+    .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    .filter(|path| !path.is_empty())
+    .map(PathBuf::from);
+
+  let done_job_id = job_id.clone();
+
+  thread::spawn(move || {
+    let mut command = recipe_command(justfile_dir, impure, &invocation);
+
+    let spool_file = spool_path.as_ref().and_then(|path| File::create(path).ok());
+
+    match spool_file.as_ref().and_then(|file| file.try_clone().ok()) {
+      Some(stdout_target) => command.stdout(stdout_target),
+      None => command.stdout(Stdio::null()),
+    };
+
+    match spool_file {
+      Some(stderr_target) => command.stderr(stderr_target),
+      None => command.stderr(Stdio::null()),
+    };
+
+    let (state, message) = match command.spawn() {
+      Ok(mut child) => {
+        let status = match timeout {
+          Some(timeout) => wait_with_timeout(&mut child, timeout),
+          None => child.wait().map(Some),
+        };
+
+        match status {
+          Ok(Some(status)) if status.success() => ("succeeded", "recipe completed".to_owned()),
+          Ok(Some(status)) => ("failed", format!("recipe exited with {status}")),
+          Ok(None) => ("failed", "recipe timed out".to_owned()),
+          Err(io_error) => ("failed", format!("wait failed: {io_error}")),
+        }
+      }
+      Err(io_error) => ("failed", format!("failed to start recipe: {io_error}")),
+    };
+
+    let _ = ringmaster_command()
+      .args([
+        "done",
+        &done_job_id,
+        "--state",
+        state,
+        "--message",
+        &message,
+      ])
+      .status();
+  });
+
+  tool_result_json(serde_json::json!({ "job_id": job_id }))
 }

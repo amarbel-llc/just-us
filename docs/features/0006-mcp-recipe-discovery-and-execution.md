@@ -35,13 +35,16 @@ The same stdio MCP server FDR 0005 introduced now also advertises the
   through `list_recipes` or the system-prompt roster is separately
   reachable by naming it directly. Unknown or private name → a tool
   result with `isError: true`, not a JSON-RPC protocol error.
-- **`run_recipe { recipe: string, args?: string[] }`** — runs the recipe
-  through the exact same `Justfile::run` path `just <recipe>` itself
-  uses. `args` are positional, in declared-parameter order — `just` has
-  no named-argument CLI syntax, so there is no richer mapping to invent.
-  Returns the recipe's captured stdout/stderr as text content, and sets
-  `isError: true` (with the formatted error appended as an extra text
-  block) when the recipe fails or is unknown.
+- **`run_recipe { recipe: string, args?: string[], impure?: bool, timeout?: string, async?: bool }`**
+  — runs the recipe as a real subprocess. `args` are positional, in
+  declared-parameter order — `just` has no named-argument CLI syntax, so
+  there is no richer mapping to invent. `impure`/`timeout`/`async`
+  restore parity with the retired `just-us-agents` moxin's devshell
+  wrapping and add a real background/timeout story; see "Execution
+  model" below. Returns the recipe's captured stdout/stderr as text
+  content, and sets `isError: true` (with the formatted error appended
+  as an extra text block) when the recipe fails, is unknown, or times
+  out.
 - **`dump_justfile`** (no input) — the full compiled justfile, serialized
   the same way `just --dump --dump-format json` does (`Justfile`'s own
   `Serialize` impl, unfiltered — this is the raw AST-level dump, not the
@@ -62,22 +65,62 @@ response with `result.isError: true` — consistent with the MCP tools
 convention that execution failure is tool-result data, not a transport
 error, and it preserves whatever output was captured before the failure.
 
-### How `run_recipe` avoids corrupting the JSON-RPC stream
+### Execution model: always a real subprocess
 
-This server's real stdout is the MCP JSON-RPC channel — a recipe's child
-process stdout/stderr must never be inherited from it. `run_recipe` reuses
-the RFC 0002 (`--events-fd`) output-capture path instead of building a new
-one: `src/recipe.rs`'s capture branch is gated on `EventSink::is_active()`,
-not on `config.events_fd` being set, and `EventSink::from_writer` accepts
-any `Write + Send` sink, not only a real fd. So `run_recipe` builds an
-`EventSink::from_writer` over an in-memory buffer, calls `Justfile::run`
-exactly as `Subcommand::Run` does (with a cloned `Config` whose
-`subcommand` is swapped to `Run { arguments }` so `Justfile::run`'s own
-invocation-parsing branch fires), and the recipe's entire captured
-stdout/stderr — as `--events-fd`'s own NDJSON `Event::Output` records —
-lands in that buffer instead of on the server's real stdout. No subprocess
-re-invocation of the `just` binary; this is `--events-fd` semantics with
-the "fd" being an in-memory pipe relayed back over MCP.
+`run_recipe` originally executed in-process via `Justfile::run` (an
+`EventSink` capture trick borrowed from `--events-fd`, avoiding a
+subprocess re-invocation of `just`). That changed with a cutover contract
+from `circus` (the consumer replacing the `just-us-agents` moxin for
+production devshell-dependent recipes — e.g. `nixos-rebuild`-style jobs):
+devshell parity, real timeouts, and real backgrounding all fundamentally
+need a killable, independently-schedulable OS process, which a plain
+in-process function call can't safely provide in Rust. `run_recipe` now
+**always** spawns a subprocess:
+
+- If the target justfile's directory has its own `flake.nix`: spawns
+  `nix develop [--impure] -c just <recipe> <args...>` — restores
+  devshell tools (matching the moxin's own conditional wrapping and its
+  `JUST_US_AGENTS_IMPURE=1` env-var opt-in, now a real `impure`
+  parameter).
+- Otherwise: re-invokes this same `just` binary directly
+  (`std::env::current_exe`) — guarantees the exact version already
+  serving this MCP session, no PATH-resolution ambiguity.
+
+`list_recipes`/`show_recipe`/`dump_justfile`/`list_variables` are
+unaffected — they still read the already-compiled in-process
+`Compilation`/`RecipeModel`; only `run_recipe`'s execution changed.
+
+**`timeout`** (e.g. `"25m"`, `"90s"`, `"2h"` — single-unit only, no
+compound forms like `"1h30m"` in this slice) polls the child and kills
+it on expiry, reporting `isError: true` with a "timed out" message and
+whatever output was captured before the kill.
+
+**`async: true`** makes `run_recipe` a real **ringmaster job producer**
+(RFC-0009/0010/0011 — `code.linenisgreat.com/clown`), not a wrapper
+around moxy's `async` (just-us is clown-native and has no access to
+moxy's meta-tool). Concretely: `ringmaster start --source just-us --label
+<recipe>` allocates the job and returns its id immediately as the tool
+result (no waiting for the recipe); the recipe subprocess's stdout/stderr
+are redirected **directly to the job's output spool**
+(`ringmaster spool-path`) at spawn time, so `ringmaster tail -f` and
+moxy's own `async-result` see live output exactly the way they already
+do for any other clown job — no polling/buffering code needed, the OS
+does the incremental writing; a detached background thread waits for the
+subprocess (applying `timeout` the same way as the sync path) and calls
+`ringmaster done --state succeeded|failed` on completion, which sends
+the wake. Session targeting needs no explicit parameter: `ringmaster
+start` resolves the session to wake from `CLOWN_SESSION_ID`, inherited
+from the clown stdio-bridge that spawned this process. If the
+`ringmaster` binary can't be found at all, `async: true` fails clearly
+(`isError`) rather than silently falling back to sync.
+
+The `ringmaster` binary itself is a build-time pin, not a PATH lookup: a
+nix-built `just` embeds clown's `ringmaster` package's exact store path
+(`RINGMASTER_BIN`, set on the `just` derivation in `flake.nix`, forwarded
+by `build.rs` via `option_env!`) — confirmed by Nix's own reference
+scanner picking it up into `just`'s runtime closure automatically. A
+plain `cargo build` (no `RINGMASTER_BIN` set) falls back to a PATH
+lookup, so the dev-loop doesn't need the `clown` flake input.
 
 ## Examples
 
@@ -87,21 +130,40 @@ the "fd" being an in-memory pipe relayed back over MCP.
     --> {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"fail"}}}
     <-- {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"error: recipe `fail` failed on line 5 with exit code 3"}],"isError":true}}
 
+    --> {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"nixos-rebuild","async":true,"impure":true,"timeout":"25m"}}}
+    <-- {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"job_id\":\"nixos-rebuild-9f3c1a2b\"}"}]}}
+    (the caller then uses ringmaster's own job_wait/job_status/tail to observe completion)
+
 ## Limitations
 
 - No per-call variable overrides (`--set`): `run_recipe` reuses whatever
-  overrides the server was launched with.
-- `just`'s own command-echo lines (`eprintln!` before each shell command,
-  printed unless the recipe is quiet or `--quiet` is set) go to the
-  server's real stderr, not into the captured content — they are just's
-  own diagnostic output, not the recipe's child-process stdout/stderr, and
-  `--events-fd`'s capture path never touched them either.
-- Buffered, not streamed: like `--events-fd` itself, a `run_recipe` result
-  only appears after the recipe finishes. No partial/live output for a
-  long-running recipe.
+  overrides the target justfile/environment already carries.
+- `timeout` only supports a single unit (`"25m"`, not `"1h30m"`) — no
+  compound-duration parsing in this slice.
+- Cooperative cancellation (`ringmaster cancel`) is not wired up: an
+  async job can be cancelled at the ringmaster-journal level, but
+  `run_recipe`'s background thread doesn't poll for that record and stop
+  the subprocess. A crashed or killed `just --mcp` process orphans any
+  in-flight async job the same way any ringmaster producer crash does
+  (documented in `ringmaster(1)`'s CAVEATS) — the journal is
+  garbage-collected after the retention window, not reaped.
+- `async`'s live output relies on the subprocess's stdout/stderr being
+  redirected straight to the job's spool file — the sync path (no
+  `async`) is buffered-until-exit, same as before.
+- Devshell wrapping (`nix develop -c`) and full async job-completion/wake
+  behavior have real environmental dependencies (a real `flake.nix` +
+  network, a live clown session) that don't fit the hermetic bats-in-nix-
+  sandbox lane well; `zz-tests_bats/mcp_tools.bats` covers sync execution,
+  timeout, and the async dispatch call itself (job id returned promptly),
+  but not devshell-wrapping or a full async completion+wake round trip —
+  those were verified by manual smoke test instead.
 - Still no Rust MCP SDK: `tools/list`/`tools/call` are hand-parsed
   JSON-RPC, same as FDR 0005's `prompts/*`. Revisit if/when FDR 0004's
   FUSE/editing facets need something richer.
+- The exact `impure`/`timeout`/`async` parameter shape (flat fields on
+  `run_recipe`) may not scale cleanly as more modifiers accumulate —
+  tracked as a followup to explore a more structured shape
+  (`forge.starbrandshoes.com/linenisgreat/just-us#28`).
 
 ## More Information
 
@@ -113,6 +175,11 @@ the "fd" being an in-memory pipe relayed back over MCP.
   `tools` is added alongside it on the same server.
 - FDR 0003 (`0003-recipe-model.md`) — the `RecipeModel`/`ModelRecipe`
   projection `list_recipes`/`show_recipe` serialize.
-- `docs/rfcs/0002-just-events-fd-stream.md` — the NDJSON event stream and
-  the "Suppressing Inherited stdout/stderr" capture mechanism `run_recipe`
-  reuses via an in-memory `EventSink` instead of a real fd.
+- `code.linenisgreat.com/clown` `ringmaster(1)` — the job-platform CLI
+  `run_recipe`'s async mode shells out to (RFC-0009/0010/0011); its
+  EXAMPLES section shows `spinclass`'s own pre-merge-hook job using the
+  exact same `start`/`done` pattern this FDR follows.
+- The retired `just-us-agents` moxy moxin (`amarbel-llc/moxy` repo,
+  `moxins/just-us-agents/`) — the `run-recipe`/`run-recipe-default`
+  devshell-wrapping and `JUST_US_AGENTS_IMPURE=1` behavior `run_recipe`'s
+  `impure` parameter restores parity with.

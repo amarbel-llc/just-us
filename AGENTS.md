@@ -46,11 +46,15 @@ system-prompt-contribution prompt (`system-prompt-append`) with every
 public recipe's namepath + doc line, unfiltered
 (`docs/features/0005-*`), and also serves a `tools` capability —
 `list_recipes`, `show_recipe`, `run_recipe`, `dump_justfile`,
-`list_variables` — giving MCP-level parity with the `just-us-agents`
-moxy moxin. `run_recipe` reuses the `--events-fd` output-capture path
-(an in-memory `EventSink` instead of a real fd) so a recipe's child
-stdout/stderr never leaks onto the server's own stdout, the JSON-RPC
-channel (`docs/features/0006-*`).
+`list_variables` — giving MCP-level parity with the retired
+`just-us-agents` moxy moxin. `run_recipe` always executes as a real
+subprocess (`nix develop -c` wrapping when a flake.nix is present,
+`impure`/`timeout` parameters, and an `async` mode that's a real
+ringmaster job producer for backgrounding long recipes — see
+`code.linenisgreat.com/clown`'s `ringmaster(1)`) rather than in-process
+(`docs/features/0006-*`). The `ringmaster` binary itself is a
+build-time pin (`RINGMASTER_BIN`, `flake.nix` + `build.rs`), not a PATH
+lookup, via a new `clown` flake input.
 Together these are the `tools`/`prompts` slices of a broader, still-
 **proposed** recipe-*editing* MCP surface (FUSE + MCP tool calls,
 `docs/features/0004-*`) that has not been implemented yet.

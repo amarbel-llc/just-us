@@ -15,6 +15,7 @@
   bats-libs,
   myBin, # the just binary derivation
   batsSrc,
+  ringmaster, # clown's job-platform CLI; run_recipe's async mode shells out to it
   batsTestTimeout ? "10",
 }:
 let
@@ -39,7 +40,14 @@ let
       };
       # bats-island's setup_test_home calls `git config --global` to
       # populate GIT_CONFIG_GLOBAL; the sandbox needs git on PATH.
-      nativeBuildInputs = [ pkgs.git ];
+      # ringmaster is on PATH so a `run_recipe async: true` test can
+      # exercise the real `ringmaster start`/`spool-path` calls (not the
+      # build-time RINGMASTER_BIN pin, which points at a store path
+      # outside this sandbox's closure unless separately propagated).
+      nativeBuildInputs = [
+        pkgs.git
+        ringmaster
+      ];
     };
 
   batsFiles = lib.filter (f: lib.hasSuffix ".bats" f) (builtins.attrNames (builtins.readDir batsSrc));

@@ -20,6 +20,14 @@
     # linters. Tool binaries resolve from our `nixpkgs`; only the
     # conformist binary itself comes from the input's own pin.
     conformist.url = "github:amarbel-llc/conformist";
+
+    # Supplies `ringmaster`, the job-platform CLI `run_recipe`'s async
+    # mode shells out to (docs/features/0006 addendum: subprocess
+    # execution + ringmaster job producer). Canonical host is
+    # code.linenisgreat.com, not a GitHub mirror — see AGENTS.md's host
+    # note. Only the `ringmaster` package output is referenced; nix only
+    # realizes that one attribute, not clown's whole (large) output set.
+    clown.url = "git+ssh://git@code.linenisgreat.com/clown.git";
   };
 
   outputs =
@@ -39,6 +47,14 @@
 
         package = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package;
 
+        # Build-time pin for `run_recipe`'s async (ringmaster job producer)
+        # mode: embedded into the binary via build.rs + `option_env!` so a
+        # nix-built `just` never depends on `ringmaster` being ambiently on
+        # PATH. Falls back to a PATH lookup (Command::resolve) when unset,
+        # which keeps a plain `cargo build` dev-loop working without this
+        # input.
+        ringmaster = inputs.clown.packages.${system}.ringmaster;
+
         just = pkgs.rustPlatform.buildRustPackage {
           pname = "just";
           version = package.version;
@@ -50,6 +66,8 @@
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
+
+          RINGMASTER_BIN = "${ringmaster}/bin/ringmaster";
 
           nativeBuildInputs = with pkgs; [
             installShellFiles
@@ -171,7 +189,7 @@
         };
 
         batsLib = import ./bats.nix {
-          inherit pkgs;
+          inherit pkgs ringmaster;
           myBin = just;
           batsLane = inputs.bats.lib.${system}.batsLane;
           bats-libs = inputs.bats.packages.${system}.bats-libs;
