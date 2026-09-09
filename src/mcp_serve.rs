@@ -78,29 +78,55 @@ fn public_recipes(justfile: &Justfile) -> Vec<ModelRecipe> {
     .collect()
 }
 
+/// `list_recipes`'s default (non-`verbose`) shape: just what's needed to
+/// browse and pick a recipe, not the full FDR 0003 model. At a few
+/// hundred recipes (a real large multi-justfile repo) the full model is
+/// large enough to blow past the MCP inline-result limit and spill to a
+/// file the caller then has to `jq`/`grep` — defeating "list recipes so
+/// an agent can just read them".
+fn compact_recipe(recipe: &ModelRecipe) -> serde_json::Value {
+  serde_json::json!({
+    "namepath": recipe.namepath,
+    "doc": recipe.doc,
+    "parameters": recipe.parameters,
+    "groups": recipe.groups,
+  })
+}
+
 /// Directories `find_child_justfiles` never descends into, matching the
 /// retired `just-us-agents` moxin's own `list-recipes` script exactly
 /// (its `find` invocation pruned these three by name).
 const CHILD_JUSTFILE_SKIP: &[&str] = &[".git", ".worktrees", ".claude"];
+/// Excludes only the root's own justfile from being double-counted as a
+/// "child" — structural, not a real tuning knob, unlike max depth.
 const CHILD_JUSTFILE_MIN_DEPTH: usize = 2;
-const CHILD_JUSTFILE_MAX_DEPTH: usize = 3;
+/// Default `max_depth` when a tool call omits it — matches the retired
+/// moxin's own hardcoded limit. Overridable per call (`list_recipes`/
+/// `show_recipe`'s `max_depth` param) for repos nested deeper than the
+/// moxin ever handled.
+const CHILD_JUSTFILE_DEFAULT_MAX_DEPTH: usize = 3;
 
 /// Every other, separate justfile in the tree under `root` — reproducing
-/// the retired moxin's `find . -mindepth 2 -maxdepth 3 -name justfile`
-/// (case-sensitive, exact name only; not just's own broader
+/// the retired moxin's `find . -mindepth 2 -maxdepth <max_depth> -name
+/// justfile` (case-sensitive, exact name only; not just's own broader
 /// `search::JUSTFILE_NAMES`). `root` itself is depth 0, so a file here is
 /// found at depth `dir_depth + 1`; a directory is only worth recursing
-/// into while that would still be `< CHILD_JUSTFILE_MAX_DEPTH` (a
-/// directory at depth 3 can only contain depth-4 files, already out of
+/// into while that would still be `< max_depth` (a directory at depth
+/// `max_depth` can only contain files one level deeper, already out of
 /// range).
-fn find_child_justfiles(root: &Path) -> Vec<PathBuf> {
+fn find_child_justfiles(root: &Path, max_depth: usize) -> Vec<PathBuf> {
   let mut found = Vec::new();
-  find_child_justfiles_at(root, 0, &mut found);
+  find_child_justfiles_at(root, 0, max_depth, &mut found);
   found.sort();
   found
 }
 
-fn find_child_justfiles_at(dir: &Path, dir_depth: usize, found: &mut Vec<PathBuf>) {
+fn find_child_justfiles_at(
+  dir: &Path,
+  dir_depth: usize,
+  max_depth: usize,
+  found: &mut Vec<PathBuf>,
+) {
   let Ok(entries) = fs::read_dir(dir) else {
     return;
   };
@@ -119,11 +145,11 @@ fn find_child_justfiles_at(dir: &Path, dir_depth: usize, found: &mut Vec<PathBuf
         continue;
       }
 
-      if file_depth < CHILD_JUSTFILE_MAX_DEPTH {
-        find_child_justfiles_at(&entry.path(), file_depth, found);
+      if file_depth < max_depth {
+        find_child_justfiles_at(&entry.path(), file_depth, max_depth, found);
       }
     } else if file_type.is_file()
-      && (CHILD_JUSTFILE_MIN_DEPTH..=CHILD_JUSTFILE_MAX_DEPTH).contains(&file_depth)
+      && (CHILD_JUSTFILE_MIN_DEPTH..=max_depth).contains(&file_depth)
       && name == "justfile"
     {
       found.push(entry.path());
@@ -141,15 +167,19 @@ fn find_child_justfiles_at(dir: &Path, dir_depth: usize, found: &mut Vec<PathBuf
 /// this is best-effort repo-wide discovery, not something one unrelated
 /// broken subdirectory justfile should be able to fail entirely.
 ///
-/// Scoped to `list_recipes` only, deliberately — `show_recipe`/
-/// `run_recipe` can't yet target a discovered child justfile directly
-/// (see docs/features/0006's Limitations); a recipe surfaced here may
-/// not be directly runnable yet, matching the asymmetry the retired
-/// moxin's own tools already had.
-fn all_public_recipes(config: &Config, root: &Path, root_justfile: &Justfile) -> Vec<ModelRecipe> {
+/// Backs both `list_recipes` and `show_recipe` — a discovered child
+/// recipe is resolvable by `show_recipe`'s `dir/recipe` namepath and
+/// runnable via `run_recipe`'s positional form, so there is no longer an
+/// asymmetry between what's discoverable and what's addressable.
+fn all_public_recipes(
+  config: &Config,
+  root: &Path,
+  root_justfile: &Justfile,
+  max_depth: usize,
+) -> Vec<ModelRecipe> {
   let mut recipes = public_recipes(root_justfile);
 
-  for path in find_child_justfiles(root) {
+  for path in find_child_justfiles(root, max_depth) {
     let loader = Loader::new();
 
     let Ok(compilation) = Compiler::compile(config, &loader, &path) else {
@@ -175,6 +205,13 @@ fn all_public_recipes(config: &Config, root: &Path, root_justfile: &Justfile) ->
   }
 
   recipes
+}
+
+fn parse_max_depth(arguments: &serde_json::Value) -> usize {
+  arguments
+    .get("max_depth")
+    .and_then(serde_json::Value::as_u64)
+    .map_or(CHILD_JUSTFILE_DEFAULT_MAX_DEPTH, |value| value as usize)
 }
 
 /// `"<namepath>  <doc>"` lines, the same shape `--list` shows a human,
@@ -251,18 +288,34 @@ fn tools_list_result() -> serde_json::Value {
     "tools": [
       {
         "name": "list_recipes",
-        "description": "List every public recipe with its namepath, doc, group, and parameters — including other justfiles found elsewhere in the repo tree, namepath-prefixed by their directory.",
-        "inputSchema": { "type": "object", "properties": {} },
+        "description": "List every public recipe (namepath, doc, parameters, groups) — including other justfiles found elsewhere in the repo tree, namepath-prefixed by their directory. Compact by default; pass verbose for the full model entry per recipe.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "type": "boolean",
+              "description": "Return the full recipe model (doc_prelude, dependencies, source, line, ...) per recipe instead of the compact {namepath, doc, parameters, groups} shape. Default false.",
+            },
+            "max_depth": {
+              "type": "integer",
+              "description": "How many directory levels below the repo root to search for other justfiles. Default 3 (matching the retired just-us-agents moxin); raise for repos nested deeper than that.",
+            },
+          },
+        },
       },
       {
         "name": "show_recipe",
-        "description": "Show one public recipe's full model entry by namepath.",
+        "description": "Show one public recipe's full model entry by namepath — resolves recipes in other justfiles found elsewhere in the repo tree too (the same dir/recipe namepath list_recipes reports).",
         "inputSchema": {
           "type": "object",
           "properties": {
             "recipe": {
               "type": "string",
-              "description": "Recipe namepath, e.g. \"build\" or \"module::recipe\".",
+              "description": "Recipe namepath, e.g. \"build\", \"module::recipe\", or \"dir/recipe\" for a recipe in another justfile.",
+            },
+            "max_depth": {
+              "type": "integer",
+              "description": "How many directory levels below the repo root to search for other justfiles. Default 3; raise if the recipe lives deeper than that.",
             },
           },
           "required": ["recipe"],
@@ -331,26 +384,40 @@ fn tools_call(
   let arguments = params.get("arguments").cloned().unwrap_or_default();
 
   match name {
-    "list_recipes" => ok(
-      id,
-      tool_result_json(
-        serde_json::to_value(all_public_recipes(
-          config,
-          &search.working_directory,
-          &compilation.justfile,
-        ))
-        .unwrap_or(serde_json::Value::Null),
-      ),
-    ),
+    "list_recipes" => {
+      let verbose = arguments
+        .get("verbose")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+      let recipes = all_public_recipes(
+        config,
+        &search.working_directory,
+        &compilation.justfile,
+        parse_max_depth(&arguments),
+      );
+
+      let value = if verbose {
+        serde_json::to_value(recipes).unwrap_or(serde_json::Value::Null)
+      } else {
+        serde_json::Value::Array(recipes.iter().map(compact_recipe).collect())
+      };
+
+      ok(id, tool_result_json(value))
+    }
     "show_recipe" => {
       let Some(recipe) = arguments.get("recipe").and_then(serde_json::Value::as_str) else {
         return error(id, -32602, "missing \"recipe\" argument");
       };
 
-      match public_recipes(&compilation.justfile)
-        .into_iter()
-        .find(|model| model.namepath == recipe)
-      {
+      let recipes = all_public_recipes(
+        config,
+        &search.working_directory,
+        &compilation.justfile,
+        parse_max_depth(&arguments),
+      );
+
+      match recipes.into_iter().find(|model| model.namepath == recipe) {
         Some(model) => ok(
           id,
           tool_result_json(serde_json::to_value(model).unwrap_or(serde_json::Value::Null)),

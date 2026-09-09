@@ -152,6 +152,89 @@ EOF
   [[ $output != *'"isError"'* ]] || fail "a broken child justfile should be skipped, not fail the call: $output"
 }
 
+@test "--mcp: list_recipes is compact by default, verbose opts into the full model" {
+  cat > justfile <<'EOF'
+# builds the thing
+build name:
+    @echo build {{name}}
+EOF
+
+  requests=$(printf '%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_recipes"}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_recipes","arguments":{"verbose":true}}}')
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" "$requests"
+  assert_success
+
+  compact_reply=$(echo "$output" | sed -n '1p')
+  verbose_reply=$(echo "$output" | sed -n '2p')
+
+  [[ $compact_reply == *'\"namepath\":\"build\"'* ]] || fail "compact list_recipes missing namepath: $compact_reply"
+  [[ $compact_reply == *'\"parameters\":[\"name\"]'* ]] || fail "compact list_recipes missing parameters: $compact_reply"
+  [[ $compact_reply != *'doc_prelude'* ]] || fail "compact list_recipes should not include full-model-only fields: $compact_reply"
+  [[ $compact_reply != *'\"source\"'* ]] || fail "compact list_recipes should not include source: $compact_reply"
+
+  [[ $verbose_reply == *'\"doc_prelude\":[]'* ]] || fail "verbose list_recipes missing full model fields: $verbose_reply"
+  [[ $verbose_reply == *'\"source\":\"justfile\"'* ]] || fail "verbose list_recipes missing source: $verbose_reply"
+}
+
+@test "--mcp: list_recipes/show_recipe max_depth is overridable" {
+  cat > justfile <<'EOF'
+root_recipe:
+    @echo root
+EOF
+
+  mkdir -p a/b/c
+
+  cat > a/b/c/justfile <<'EOF'
+depth4_recipe:
+    @echo depth4
+EOF
+
+  requests=$(printf '%s\n%s\n%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_recipes"}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_recipes","arguments":{"max_depth":4}}}' \
+    '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"show_recipe","arguments":{"recipe":"a/b/c/depth4_recipe"}}}' \
+    '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"show_recipe","arguments":{"recipe":"a/b/c/depth4_recipe","max_depth":4}}}')
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" "$requests"
+  assert_success
+
+  default_list=$(echo "$output" | sed -n '1p')
+  deep_list=$(echo "$output" | sed -n '2p')
+  default_show=$(echo "$output" | sed -n '3p')
+  deep_show=$(echo "$output" | sed -n '4p')
+
+  [[ $default_list != *'depth4_recipe'* ]] || fail "default max_depth should not reach depth 4: $default_list"
+  [[ $deep_list == *'\"namepath\":\"a/b/c/depth4_recipe\"'* ]] || fail "max_depth:4 should reach the depth-4 recipe: $deep_list"
+
+  [[ $default_show == *'"isError":true'* ]] || fail "show_recipe at default depth should not resolve a depth-4 recipe: $default_show"
+  [[ $deep_show == *'\"namepath\":\"a/b/c/depth4_recipe\"'* ]] || fail "show_recipe with max_depth:4 should resolve it: $deep_show"
+}
+
+@test "--mcp: show_recipe resolves a recipe in a child justfile" {
+  cat > justfile <<'EOF'
+root_recipe:
+    @echo root
+EOF
+
+  mkdir -p a
+
+  cat > a/justfile <<'EOF'
+# a child recipe
+depth2_recipe name:
+    @echo depth2 {{name}}
+EOF
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"show_recipe","arguments":{"recipe":"a/depth2_recipe"}}}'
+  assert_success
+
+  [[ $output == *'\"namepath\":\"a/depth2_recipe\"'* ]] || fail "show_recipe did not resolve the child recipe: $output"
+  [[ $output == *'\"doc\":\"a child recipe\"'* ]] || fail "show_recipe missing the child recipe's doc: $output"
+  [[ $output != *'"isError"'* ]] || fail "resolving a real child recipe should not be an error: $output"
+}
+
 @test "--mcp: run_recipe captures stdout and reports success" {
   cat > justfile <<'EOF'
 greet name:

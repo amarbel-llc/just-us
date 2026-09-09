@@ -25,33 +25,39 @@ The same stdio MCP server FDR 0005 introduced now also advertises the
 `tools` capability (`initialize.capabilities.tools = {}`, alongside
 `prompts`) and answers `tools/list` / `tools/call`.
 
-- **`list_recipes`** (no input) — every public recipe
-  (`ModelRecipe::private == false`, same visibility contract as the
-  system-prompt roster and `--list`), serialized as the full FDR 0003
-  recipe model: `namepath`, `doc`, `doc_prelude`, `groups`, `parameters`,
-  `dependencies`, `source`, `line`. Also walks the repo tree for other,
-  separate justfiles (`find`-equivalent: depth 2–3 below the server's
-  working directory, pruning `.git`/`.worktrees`/`.claude` — exact
-  parity with the retired `just-us-agents` moxin's own `list-recipes`
-  script) and includes their public recipes too, each `namepath`
+- **`list_recipes { verbose?: bool, max_depth?: number }`** — every
+  public recipe (`ModelRecipe::private == false`, same visibility
+  contract as the system-prompt roster and `--list`). **Compact by
+  default**: `{namepath, doc, parameters, groups}` per recipe — a large
+  multi-justfile repo (hundreds of recipes) blows past the MCP
+  inline-result size limit with the full model, spilling to a file the
+  caller then has to `jq`/`grep` instead of just reading a list.
+  `verbose: true` returns the full FDR 0003 model per recipe instead
+  (`doc_prelude`, `dependencies`, `source`, `line`, ...).
+  Also walks the repo tree for other, separate justfiles
+  (`find`-equivalent: depth 2 through `max_depth` — default `3` —
+  below the server's working directory, pruning
+  `.git`/`.worktrees`/`.claude` — parity with the retired
+  `just-us-agents` moxin's own `list-recipes` script, with the depth
+  limit now overridable for repos nested deeper than the moxin ever
+  handled) and includes their public recipes too, each `namepath`
   prefixed `"<relative-dir>/"` (e.g. `services/foo/build`) — `/`, not
   `::`, since these are wholly separate justfiles, not `mod`-imports of
   the one the server started with. A child justfile that fails to
   compile is silently skipped, not surfaced as an error: this is
   best-effort discovery, not a guarantee every justfile in the repo is
-  valid. **`show_recipe`/`run_recipe` cannot yet target a discovered
-  child justfile directly** — a recipe `list_recipes` surfaces this way
-  may not be directly runnable yet. This is the same asymmetry the
-  retired moxin's own tools already had (its `run-recipe`/`show-recipe`
-  never described child-justfile targeting), not a new gap introduced
-  here; closing it is "on-disk layout as an implementation detail"
-  future work (see the parked `edit_recipe` design's `justfile`
-  parameter, `docs/plans/2026-09-09-edit-recipe-mcp-editing-design.md`).
-- **`show_recipe { recipe: string }`** — the same model entry for one
-  namepath. Also `!private`-gated, for consistency: nothing reachable
-  through `list_recipes` or the system-prompt roster is separately
-  reachable by naming it directly. Unknown or private name → a tool
-  result with `isError: true`, not a JSON-RPC protocol error.
+  valid.
+- **`show_recipe { recipe: string, max_depth?: number }`** — the same
+  full model entry for one namepath, always full detail regardless of
+  `list_recipes`'s compact/verbose split (a single named lookup has no
+  output-size problem). Resolves recipes in other justfiles too — the
+  same `dir/recipe` namepath `list_recipes` reports, subject to the same
+  `max_depth` walk (also overridable here, in case the target recipe is
+  nested deeper than the default reaches). Also `!private`-gated, for
+  consistency: nothing reachable through `list_recipes` or the
+  system-prompt roster is separately reachable by naming it directly.
+  Unknown or private name → a tool result with `isError: true`, not a
+  JSON-RPC protocol error.
 - **`run_recipe { recipe: string, args?: string[], impure?: bool, timeout?: string, async?: bool }`**
   — runs the recipe as a real subprocess. `args` are positional, in
   declared-parameter order — `just` has no named-argument CLI syntax, so
@@ -103,9 +109,12 @@ in-process function call can't safely provide in Rust. `run_recipe` now
   (`std::env::current_exe`) — guarantees the exact version already
   serving this MCP session, no PATH-resolution ambiguity.
 
-`list_recipes`/`show_recipe`/`dump_justfile`/`list_variables` are
-unaffected — they still read the already-compiled in-process
-`Compilation`/`RecipeModel`; only `run_recipe`'s execution changed.
+`dump_justfile`/`list_variables` are unaffected — they still read the
+already-compiled in-process `Compilation`. `list_recipes`/`show_recipe`
+also read that in-process `Compilation` for the root justfile, but
+additionally compile any *discovered child* justfiles independently
+(see below); `run_recipe`'s own execution is the only thing that moved
+to subprocess spawning.
 
 **`timeout`** (e.g. `"25m"`, `"90s"`, `"2h"` — single-unit only, no
 compound forms like `"1h30m"` in this slice) polls the child and kills
@@ -181,6 +190,13 @@ lookup, so the dev-loop doesn't need the `clown` flake input.
   `run_recipe`) may not scale cleanly as more modifiers accumulate —
   tracked as a followup to explore a more structured shape
   (`forge.starbrandshoes.com/linenisgreat/just-us#28`).
+- No caching: `list_recipes`/`show_recipe` recompile every discovered
+  child justfile on every call. Fine at the scale this was verified
+  against (a few hundred recipes across a handful of child justfiles);
+  revisit if a repo's child-justfile count makes this measurably slow.
+- Compact `list_recipes` reduces output size but doesn't bound it —
+  a repo with enough recipes could still exceed the inline-result limit
+  even in compact form. No pagination in this slice.
 
 ## More Information
 
