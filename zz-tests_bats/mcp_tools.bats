@@ -1,12 +1,12 @@
 # bats file_tags=mcp
 #
 # `just --mcp`'s `tools` capability (docs/features/0006):
-# `list_recipes`/`show_recipe`/`run_recipe` on the same stdio MCP server
-# that already answers `prompts/get system-prompt-append`
-# (docs/features/0005). `run_recipe` reuses the `--events-fd` capture
-# path (RFC 0002) with an in-memory sink instead of a real fd, so a
-# recipe's child stdout/stderr never leaks onto the server's own
-# stdout — the JSON-RPC channel.
+# `list_recipes`/`show_recipe`/`run_recipe`/`dump_justfile`/`list_variables`
+# on the same stdio MCP server that already answers `prompts/get
+# system-prompt-append` (docs/features/0005). `run_recipe` reuses the
+# `--events-fd` capture path (RFC 0002) with an in-memory sink instead of
+# a real fd, so a recipe's child stdout/stderr never leaks onto the
+# server's own stdout — the JSON-RPC channel.
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/common.bash"
@@ -26,6 +26,39 @@ EOF
   [[ $output == *'"list_recipes"'* ]] || fail "tools/list missing list_recipes: $output"
   [[ $output == *'"show_recipe"'* ]] || fail "tools/list missing show_recipe: $output"
   [[ $output == *'"run_recipe"'* ]] || fail "tools/list missing run_recipe: $output"
+  [[ $output == *'"dump_justfile"'* ]] || fail "tools/list missing dump_justfile: $output"
+  [[ $output == *'"list_variables"'* ]] || fail "tools/list missing list_variables: $output"
+}
+
+@test "--mcp: dump_justfile returns the full compiled justfile" {
+  cat > justfile <<'EOF'
+build:
+    @echo build
+EOF
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dump_justfile"}}'
+  assert_success
+  [[ $output == *'\"recipes\"'* ]] || fail "dump_justfile missing recipes key: $output"
+  [[ $output == *'\"build\"'* ]] || fail "dump_justfile missing the build recipe: $output"
+}
+
+@test "--mcp: list_variables resolves public top-level variable values" {
+  cat > justfile <<'EOF'
+foo := "bar"
+
+_hidden := "nope"
+
+build:
+    @echo build
+EOF
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_variables"}}'
+  assert_success
+  [[ $output == *'\"name\":\"foo\"'* ]] || fail "list_variables missing foo: $output"
+  [[ $output == *'\"value\":\"bar\"'* ]] || fail "list_variables did not resolve foo's value: $output"
+  [[ $output != *'_hidden'* ]] || fail "list_variables leaked a private variable: $output"
 }
 
 @test "--mcp: list_recipes/show_recipe exclude private recipes" {

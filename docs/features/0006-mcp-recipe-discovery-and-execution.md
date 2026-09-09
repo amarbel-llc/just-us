@@ -4,7 +4,7 @@ date: 2026-09-09
 promotion-criteria:
 ---
 
-# MCP recipe discovery and execution (`list_recipes` / `show_recipe` / `run_recipe`)
+# MCP recipe discovery and execution
 
 ## Problem Statement
 
@@ -14,9 +14,10 @@ system prompt at launch. That is read-only discovery with no way to
 actually *run* anything — an agent still has to fall back to the
 `just-us-agents` moxy moxin (a wrapper maintained outside this repo) or a
 raw shell `just <recipe>` to execute a recipe. This FDR implements the
-`tools` facet of FDR 0004 (list/show/run recipes over MCP) on the same
-`just --mcp` server. FUSE and MCP-based recipe *editing* (FDR 0004's other
-two facets) stay out of scope here.
+`tools` facet of FDR 0004 (list/show/run recipes over MCP, plus
+variable/dump parity with the moxin) on the same `just --mcp` server. FUSE
+and MCP-based recipe *editing* (FDR 0004's other two facets) stay out of
+scope here.
 
 ## Interface
 
@@ -41,6 +42,18 @@ The same stdio MCP server FDR 0005 introduced now also advertises the
   Returns the recipe's captured stdout/stderr as text content, and sets
   `isError: true` (with the formatted error appended as an extra text
   block) when the recipe fails or is unknown.
+- **`dump_justfile`** (no input) — the full compiled justfile, serialized
+  the same way `just --dump --dump-format json` does (`Justfile`'s own
+  `Serialize` impl, unfiltered — this is the raw AST-level dump, not the
+  `list_recipes`/`show_recipe` model projection).
+- **`list_variables`** (no input) — every public top-level variable as
+  `{name, value}` pairs with values fully resolved, equivalent to
+  `just --evaluate`. Backed by a new `Justfile::evaluate_all` (`src/
+  justfile.rs`) that reuses the same `evaluation_target`/`evaluate_scopes`
+  setup `Subcommand::Evaluate` already does, but collects into a `Vec`
+  instead of `println!`-ing — the CLI path prints directly to this
+  process's own stdout, which here is the JSON-RPC channel, so it can't
+  be called as-is.
 
 Tool-call protocol errors (unknown tool name, missing/malformed
 arguments) are JSON-RPC errors (the existing `error()` response shape).

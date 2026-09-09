@@ -45,10 +45,12 @@ output). It answers the clown plugin protocol's dynamic
 system-prompt-contribution prompt (`system-prompt-append`) with every
 public recipe's namepath + doc line, unfiltered
 (`docs/features/0005-*`), and also serves a `tools` capability —
-`list_recipes`, `show_recipe`, `run_recipe` — that reuses the
-`--events-fd` output-capture path (an in-memory `EventSink` instead of
-a real fd) so a recipe's child stdout/stderr never leaks onto the
-server's own stdout, the JSON-RPC channel (`docs/features/0006-*`).
+`list_recipes`, `show_recipe`, `run_recipe`, `dump_justfile`,
+`list_variables` — giving MCP-level parity with the `just-us-agents`
+moxy moxin. `run_recipe` reuses the `--events-fd` output-capture path
+(an in-memory `EventSink` instead of a real fd) so a recipe's child
+stdout/stderr never leaks onto the server's own stdout, the JSON-RPC
+channel (`docs/features/0006-*`).
 Together these are the `tools`/`prompts` slices of a broader, still-
 **proposed** recipe-*editing* MCP surface (FUSE + MCP tool calls,
 `docs/features/0004-*`) that has not been implemented yet.

@@ -401,6 +401,51 @@ impl<'src> Justfile<'src> {
     Ok((current, variable, variable_references))
   }
 
+  /// Every public top-level variable as `(name, resolved value)` pairs, in
+  /// declaration order. The non-printing counterpart of
+  /// `Subcommand::Evaluate`'s `EvaluateFormat::Just` rendering (`run`,
+  /// above) — same `evaluation_target`/`evaluate_scopes` setup, but
+  /// collects instead of printing, for a caller (`just --mcp`'s
+  /// `list_variables` tool) that can't write to this process's own
+  /// stdout without corrupting it.
+  pub(crate) fn evaluate_all(
+    &self,
+    config: &Config,
+    search: &Search,
+    overrides: &HashMap<Number, String>,
+  ) -> RunResult<'src, Vec<(String, String)>> {
+    let root = Scope::root();
+    let dotenv_arena = Arena::new();
+    let scope_arena = Arena::new();
+    let mut scopes = BTreeMap::new();
+
+    let path = Modulepath::default();
+    let (module, _variable, variable_references) = self.evaluation_target(&path)?;
+
+    self.evaluate_scopes(
+      config,
+      &dotenv_arena,
+      overrides,
+      None,
+      true,
+      &root,
+      &scope_arena,
+      &mut scopes,
+      search,
+      &variable_references,
+    )?;
+
+    let scope = scopes.get(&module.module_path).unwrap().1;
+
+    Ok(
+      scope
+        .bindings()
+        .filter(|binding| !binding.private)
+        .map(|binding| (binding.name.to_string(), binding.value.to_string()))
+        .collect(),
+    )
+  }
+
   pub(crate) fn check_unstable(&self, config: &Config) -> RunResult<'src> {
     if let Some(&unstable_feature) = self.unstable_features.first() {
       config.require_unstable(self, unstable_feature)?;

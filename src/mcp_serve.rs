@@ -185,6 +185,16 @@ fn tools_list_result() -> serde_json::Value {
           "required": ["recipe"],
         },
       },
+      {
+        "name": "dump_justfile",
+        "description": "Dump the full compiled justfile (equivalent to `just --dump --dump-format json`).",
+        "inputSchema": { "type": "object", "properties": {} },
+      },
+      {
+        "name": "list_variables",
+        "description": "List every public top-level variable with its resolved value (equivalent to `just --evaluate`).",
+        "inputSchema": { "type": "object", "properties": {} },
+      },
     ],
   })
 }
@@ -248,6 +258,32 @@ fn tools_call(
         .unwrap_or_default();
 
       ok(id, run_recipe(config, search, compilation, recipe, &args))
+    }
+    "dump_justfile" => ok(
+      id,
+      tool_result_json(
+        serde_json::to_value(&compilation.justfile).unwrap_or(serde_json::Value::Null),
+      ),
+    ),
+    "list_variables" => {
+      match compilation
+        .justfile
+        .evaluate_all(config, search, &compilation.overrides)
+      {
+        Ok(variables) => ok(
+          id,
+          tool_result_json(serde_json::json!(
+            variables
+              .into_iter()
+              .map(|(name, value)| serde_json::json!({ "name": name, "value": value }))
+              .collect::<Vec<_>>()
+          )),
+        ),
+        Err(eval_error) => ok(
+          id,
+          tool_error_text(eval_error.color_display(Color::never()).to_string()),
+        ),
+      }
     }
     _ => error(id, -32601, "unknown tool"),
   }
