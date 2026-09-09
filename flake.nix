@@ -25,9 +25,14 @@
     # mode shells out to (docs/features/0006 addendum: subprocess
     # execution + ringmaster job producer). Canonical host is
     # code.linenisgreat.com, not a GitHub mirror — see AGENTS.md's host
-    # note. Only the `ringmaster` package output is referenced; nix only
-    # realizes that one attribute, not clown's whole (large) output set.
-    clown.url = "git+ssh://git@code.linenisgreat.com/clown.git";
+    # note. Anonymous HTTPS archive tarball, not git+ssh: every other
+    # fleet input into this host uses this form (see the nested
+    # `conformist` input under the `bats` input for the established
+    # pattern) so downstream consumers don't need SSH + an agent just to
+    # relock. Only the `ringmaster` package output is referenced; nix
+    # only realizes that one attribute, not clown's whole (large) output
+    # set.
+    clown.url = "https://code.linenisgreat.com/clown/archive/master.tar.gz";
   };
 
   outputs =

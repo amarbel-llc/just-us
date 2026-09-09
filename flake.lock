@@ -179,17 +179,15 @@
         "utils": "utils_2"
       },
       "locked": {
-        "lastModified": 1788967622,
-        "narHash": "sha256-JLRAVPFBYHVY2q9JMtQWJ38pjt19vWGTg42MNvvzIJA=",
-        "ref": "refs/heads/master",
-        "rev": "d21c6e4051442547db94b39771625ccc469118be",
-        "revCount": 768,
-        "type": "git",
-        "url": "ssh://git@code.linenisgreat.com/clown.git"
+        "lastModified": 1788969268,
+        "narHash": "sha256-oMts5rzEfykMwYd0QlX2pIw46Nq9uWfY4f820Js5MnM=",
+        "rev": "9912275d75025bb557f7028742a98176b534cc6f",
+        "type": "tarball",
+        "url": "https://code.linenisgreat.com/clown/archive/9912275d75025bb557f7028742a98176b534cc6f.tar.gz"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://git@code.linenisgreat.com/clown.git"
+        "type": "tarball",
+        "url": "https://code.linenisgreat.com/clown/archive/master.tar.gz"
       }
     },
     "conformist": {
