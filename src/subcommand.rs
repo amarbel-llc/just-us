@@ -123,7 +123,7 @@ impl Subcommand {
       Dump { format } => Self::dump(config, compilation, *format)?,
       Groups => Self::groups(config, justfile),
       List { path } => Self::list(config, justfile, path)?,
-      Mcp => Self::mcp(compilation)?,
+      Mcp => Self::mcp(config, &search, compilation)?,
       Run { arguments } => Self::run(config, &events, loader, search, compilation, arguments)?,
       Show { path } => Self::show(config, justfile, path)?,
       Summary => Self::summary(config, justfile),
@@ -349,8 +349,8 @@ impl Subcommand {
     Ok(())
   }
 
-  fn mcp(compilation: Compilation) -> RunResult<'static> {
-    mcp_serve::run(&compilation.justfile)
+  fn mcp(config: &Config, search: &Search, compilation: Compilation) -> RunResult<'static> {
+    mcp_serve::run(config, search, compilation)
   }
 
   fn edit(search: &Search) -> RunResult<'static> {

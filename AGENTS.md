@@ -39,14 +39,19 @@ fields on the churny AST structs, so it adds little resync burden;
 the schema is a versioned cross-repo contract conformist pins.
 
 A fourth fork-only addition builds on the recipe model: `just --mcp`
-(`src/mcp_serve.rs`, `docs/features/0005-*`), a minimal stdio MCP
-server that answers the clown plugin protocol's dynamic
-system-prompt-contribution prompt (`system-prompt-append`) with every
-public recipe's namepath + doc line, unfiltered. Packaged as a clown
+(`src/mcp_serve.rs`), a minimal stdio MCP server packaged as a clown
 plugin under `plugins/just-us/` (the `just-us-clown-plugin` flake
-output). This is a narrow slice of a broader, still-**proposed**
-recipe-editing MCP surface (FUSE + MCP tool calls, `docs/features/0004-*`)
-that has not been implemented yet.
+output). It answers the clown plugin protocol's dynamic
+system-prompt-contribution prompt (`system-prompt-append`) with every
+public recipe's namepath + doc line, unfiltered
+(`docs/features/0005-*`), and also serves a `tools` capability —
+`list_recipes`, `show_recipe`, `run_recipe` — that reuses the
+`--events-fd` output-capture path (an in-memory `EventSink` instead of
+a real fd) so a recipe's child stdout/stderr never leaks onto the
+server's own stdout, the JSON-RPC channel (`docs/features/0006-*`).
+Together these are the `tools`/`prompts` slices of a broader, still-
+**proposed** recipe-*editing* MCP surface (FUSE + MCP tool calls,
+`docs/features/0004-*`) that has not been implemented yet.
 
 ## Versioning
 

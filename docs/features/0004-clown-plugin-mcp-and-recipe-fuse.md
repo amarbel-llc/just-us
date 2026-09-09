@@ -39,13 +39,13 @@ a legal edit.
 
 ### 1. MCP server (replaces the moxy moxin)
 
-A real, stdio-speaking MCP server — not a wrapper that shells out to
-`just` — exposing recipe discovery/execution as MCP tools, e.g.
-`list_recipes`, `show_recipe`, `run_recipe`, and variable/dump parity
-with the current moxin. `list_recipes`/`show_recipe` read from
-`--dump-format model` (FDR 0003) rather than re-parsing
-`--dump-format json`, so `doc_prelude`, groups, and resolved
-dependency namepaths ride along for free.
+**Implemented — see FDR 0006** (`0006-mcp-recipe-discovery-and-execution.md`):
+`list_recipes`, `show_recipe`, and `run_recipe` now ship on `just --mcp`,
+alongside FDR 0005's `prompts/get system-prompt-append`. Variable/dump
+parity with the current moxin (beyond what these three tools cover) is
+still open. `list_recipes`/`show_recipe` read from `--dump-format model`
+(FDR 0003) rather than re-parsing `--dump-format json`, so `doc_prelude`,
+groups, and resolved dependency namepaths ride along for free.
 
 Packaged the way `cutting-garden`'s MCP server is: a
 `plugins/just-us/.claude-plugin/plugin.json` + `clown.json.in`
@@ -135,11 +135,12 @@ normal MCP tool error instead of an opaque filesystem `EIO`.
   different, ambient resource-attachment protocol, not MCP). If
   there's a specific commit/branch/repo in mind, point me at it before
   I scope the MCP implementation from scratch.
-- **Rust MCP SDK choice.** Every existing clown-plugin MCP server in
-  the org (`cutting-garden`, and presumably `madder`/`dodder`) is Go,
-  built on `code.linenisgreat.com/purse-first/libs/go-mcp`. just-us is
-  Rust — there's no existing Rust MCP precedent in this org to copy; a
-  crate (e.g. `rmcp`, the official Rust SDK) needs to be selected.
+- **Rust MCP SDK choice — answered for now.** FDR 0005 and FDR 0006 both
+  hand-roll `initialize`/`prompts/*`/`tools/*` as newline-delimited
+  JSON-RPC with no SDK, since the surface (one prompt, three tools) is
+  small enough that a full SDK wasn't warranted. Revisit if/when FUSE or
+  MCP-based editing (facets 2/3, still open) need something richer than
+  hand-parsed `serde_json::Value`.
 - **"mkSpinclass/mkClown" naming.** Checked `~/eng/lib/circus.nix`:
   `mkSpinclass` is real (`inputs.spinclass.lib.${system}.mkSpinclass
   {...}`, builds the spinclass binary itself with build-time pins),

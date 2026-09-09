@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) struct Config {
   pub(crate) alias_style: AliasStyle,
   pub(crate) allow_missing: bool,
