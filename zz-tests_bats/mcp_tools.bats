@@ -98,6 +98,60 @@ EOF
   [[ $third_reply == *'"isError":true'* ]] || fail "show_recipe(_hidden) should error: $third_reply"
 }
 
+@test "--mcp: list_recipes also enumerates other justfiles in the repo tree" {
+  # Reproduces the retired just-us-agents moxin's own list-recipes
+  # behavior (find . -mindepth 2 -maxdepth 3 -name justfile, skipping
+  # .git/.worktrees/.claude) for retirement parity.
+  cat > justfile <<'EOF'
+root_recipe:
+    @echo root
+EOF
+
+  mkdir -p a/b/c .git broken
+
+  cat > a/justfile <<'EOF'
+depth2_recipe:
+    @echo depth2
+EOF
+
+  cat > a/b/justfile <<'EOF'
+depth3_recipe:
+    @echo depth3
+
+_hidden_depth3:
+    @echo hidden
+EOF
+
+  # Out of range (depth 4) -- must not appear.
+  cat > a/b/c/justfile <<'EOF'
+depth4_recipe:
+    @echo depth4
+EOF
+
+  # Inside a pruned directory -- must never even be looked at.
+  cat > .git/justfile <<'EOF'
+should_never_appear:
+    @echo nope
+EOF
+
+  # Fails to compile -- must be skipped, not fail the whole call.
+  cat > broken/justfile <<'EOF'
+this is not valid just syntax {{{
+EOF
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_recipes"}}'
+  assert_success
+
+  [[ $output == *'\"namepath\":\"root_recipe\"'* ]] || fail "missing root recipe: $output"
+  [[ $output == *'\"namepath\":\"a/depth2_recipe\"'* ]] || fail "missing depth-2 child recipe: $output"
+  [[ $output == *'\"namepath\":\"a/b/depth3_recipe\"'* ]] || fail "missing depth-3 child recipe: $output"
+  [[ $output != *'depth4_recipe'* ]] || fail "depth-4 child recipe should be out of range: $output"
+  [[ $output != *'should_never_appear'* ]] || fail ".git should be pruned, never descended into: $output"
+  [[ $output != *'_hidden_depth3'* ]] || fail "private recipes in a child justfile should still be excluded: $output"
+  [[ $output != *'"isError"'* ]] || fail "a broken child justfile should be skipped, not fail the call: $output"
+}
+
 @test "--mcp: run_recipe captures stdout and reports success" {
   cat > justfile <<'EOF'
 greet name:

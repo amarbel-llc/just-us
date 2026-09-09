@@ -78,6 +78,105 @@ fn public_recipes(justfile: &Justfile) -> Vec<ModelRecipe> {
     .collect()
 }
 
+/// Directories `find_child_justfiles` never descends into, matching the
+/// retired `just-us-agents` moxin's own `list-recipes` script exactly
+/// (its `find` invocation pruned these three by name).
+const CHILD_JUSTFILE_SKIP: &[&str] = &[".git", ".worktrees", ".claude"];
+const CHILD_JUSTFILE_MIN_DEPTH: usize = 2;
+const CHILD_JUSTFILE_MAX_DEPTH: usize = 3;
+
+/// Every other, separate justfile in the tree under `root` — reproducing
+/// the retired moxin's `find . -mindepth 2 -maxdepth 3 -name justfile`
+/// (case-sensitive, exact name only; not just's own broader
+/// `search::JUSTFILE_NAMES`). `root` itself is depth 0, so a file here is
+/// found at depth `dir_depth + 1`; a directory is only worth recursing
+/// into while that would still be `< CHILD_JUSTFILE_MAX_DEPTH` (a
+/// directory at depth 3 can only contain depth-4 files, already out of
+/// range).
+fn find_child_justfiles(root: &Path) -> Vec<PathBuf> {
+  let mut found = Vec::new();
+  find_child_justfiles_at(root, 0, &mut found);
+  found.sort();
+  found
+}
+
+fn find_child_justfiles_at(dir: &Path, dir_depth: usize, found: &mut Vec<PathBuf>) {
+  let Ok(entries) = fs::read_dir(dir) else {
+    return;
+  };
+
+  let file_depth = dir_depth + 1;
+
+  for entry in entries.flatten() {
+    let Ok(file_type) = entry.file_type() else {
+      continue;
+    };
+
+    let name = entry.file_name();
+
+    if file_type.is_dir() {
+      if CHILD_JUSTFILE_SKIP.iter().any(|skip| name == *skip) {
+        continue;
+      }
+
+      if file_depth < CHILD_JUSTFILE_MAX_DEPTH {
+        find_child_justfiles_at(&entry.path(), file_depth, found);
+      }
+    } else if file_type.is_file()
+      && (CHILD_JUSTFILE_MIN_DEPTH..=CHILD_JUSTFILE_MAX_DEPTH).contains(&file_depth)
+      && name == "justfile"
+    {
+      found.push(entry.path());
+    }
+  }
+}
+
+/// `public_recipes` for the root justfile, plus every public recipe from
+/// every child justfile `find_child_justfiles` turns up under `root`
+/// (docs/features/0006 addendum — parity with the retired moxin's own
+/// `list-recipes`). Each child recipe's `namepath` is rewritten to
+/// `"<relative-dir>/<namepath>"` — `/`, not `::`, since these are wholly
+/// separate justfiles, not `mod`-imports of the one the server started
+/// with. A child justfile that fails to compile is silently skipped:
+/// this is best-effort repo-wide discovery, not something one unrelated
+/// broken subdirectory justfile should be able to fail entirely.
+///
+/// Scoped to `list_recipes` only, deliberately — `show_recipe`/
+/// `run_recipe` can't yet target a discovered child justfile directly
+/// (see docs/features/0006's Limitations); a recipe surfaced here may
+/// not be directly runnable yet, matching the asymmetry the retired
+/// moxin's own tools already had.
+fn all_public_recipes(config: &Config, root: &Path, root_justfile: &Justfile) -> Vec<ModelRecipe> {
+  let mut recipes = public_recipes(root_justfile);
+
+  for path in find_child_justfiles(root) {
+    let loader = Loader::new();
+
+    let Ok(compilation) = Compiler::compile(config, &loader, &path) else {
+      continue;
+    };
+
+    let relative_dir = path
+      .strip_prefix(root)
+      .unwrap_or(&path)
+      .parent()
+      .unwrap_or(Path::new(""));
+
+    let prefix = relative_dir.to_string_lossy();
+
+    recipes.extend(
+      public_recipes(&compilation.justfile)
+        .into_iter()
+        .map(|mut recipe| {
+          recipe.namepath = format!("{prefix}/{}", recipe.namepath);
+          recipe
+        }),
+    );
+  }
+
+  recipes
+}
+
 /// `"<namepath>  <doc>"` lines, the same shape `--list` shows a human,
 /// lifted verbatim (docs/features/0005).
 fn roster(justfile: &Justfile) -> String {
@@ -152,7 +251,7 @@ fn tools_list_result() -> serde_json::Value {
     "tools": [
       {
         "name": "list_recipes",
-        "description": "List every public recipe with its namepath, doc, group, and parameters.",
+        "description": "List every public recipe with its namepath, doc, group, and parameters — including other justfiles found elsewhere in the repo tree, namepath-prefixed by their directory.",
         "inputSchema": { "type": "object", "properties": {} },
       },
       {
@@ -235,8 +334,12 @@ fn tools_call(
     "list_recipes" => ok(
       id,
       tool_result_json(
-        serde_json::to_value(public_recipes(&compilation.justfile))
-          .unwrap_or(serde_json::Value::Null),
+        serde_json::to_value(all_public_recipes(
+          config,
+          &search.working_directory,
+          &compilation.justfile,
+        ))
+        .unwrap_or(serde_json::Value::Null),
       ),
     ),
     "show_recipe" => {

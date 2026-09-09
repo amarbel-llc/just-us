@@ -29,7 +29,24 @@ The same stdio MCP server FDR 0005 introduced now also advertises the
   (`ModelRecipe::private == false`, same visibility contract as the
   system-prompt roster and `--list`), serialized as the full FDR 0003
   recipe model: `namepath`, `doc`, `doc_prelude`, `groups`, `parameters`,
-  `dependencies`, `source`, `line`.
+  `dependencies`, `source`, `line`. Also walks the repo tree for other,
+  separate justfiles (`find`-equivalent: depth 2–3 below the server's
+  working directory, pruning `.git`/`.worktrees`/`.claude` — exact
+  parity with the retired `just-us-agents` moxin's own `list-recipes`
+  script) and includes their public recipes too, each `namepath`
+  prefixed `"<relative-dir>/"` (e.g. `services/foo/build`) — `/`, not
+  `::`, since these are wholly separate justfiles, not `mod`-imports of
+  the one the server started with. A child justfile that fails to
+  compile is silently skipped, not surfaced as an error: this is
+  best-effort discovery, not a guarantee every justfile in the repo is
+  valid. **`show_recipe`/`run_recipe` cannot yet target a discovered
+  child justfile directly** — a recipe `list_recipes` surfaces this way
+  may not be directly runnable yet. This is the same asymmetry the
+  retired moxin's own tools already had (its `run-recipe`/`show-recipe`
+  never described child-justfile targeting), not a new gap introduced
+  here; closing it is "on-disk layout as an implementation detail"
+  future work (see the parked `edit_recipe` design's `justfile`
+  parameter, `docs/plans/2026-09-09-edit-recipe-mcp-editing-design.md`).
 - **`show_recipe { recipe: string }`** — the same model entry for one
   namepath. Also `!private`-gated, for consistency: nothing reachable
   through `list_recipes` or the system-prompt roster is separately
