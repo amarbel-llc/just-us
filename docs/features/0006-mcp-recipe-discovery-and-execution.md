@@ -1,6 +1,6 @@
 ---
 status: proposed
-date: 2026-09-09
+date: 2026-09-10
 promotion-criteria:
 ---
 
@@ -100,14 +100,53 @@ need a killable, independently-schedulable OS process, which a plain
 in-process function call can't safely provide in Rust. `run_recipe` now
 **always** spawns a subprocess:
 
-- If the target justfile's directory has its own `flake.nix`: spawns
-  `nix develop [--impure] -c just <recipe> <args...>` — restores
-  devshell tools (matching the moxin's own conditional wrapping and its
-  `JUST_US_AGENTS_IMPURE=1` env-var opt-in, now a real `impure`
-  parameter).
+- If a `flake.nix` backs the recipe: spawns
+  `nix develop [--impure] <flake_dir> -c just <recipe> <args...>` —
+  restores devshell tools (matching the moxin's own conditional wrapping
+  and its `JUST_US_AGENTS_IMPURE=1` env-var opt-in, now a real `impure`
+  parameter). `<flake_dir>` is passed as an explicit path installable
+  (`nix develop <path> -c ...`, not relying on `nix develop`'s own
+  cwd-based resolution), because *which* directory backs the devshell is
+  resolved independently of where the recipe itself lives — see below.
 - Otherwise: re-invokes this same `just` binary directly
   (`std::env::current_exe`) — guarantees the exact version already
   serving this MCP session, no PATH-resolution ambiguity.
+
+Either way, the spawned process's own cwd is always the repo root
+(`search.working_directory`), and `recipe` is passed to `just` exactly
+as given — including a `dir/` prefix, unstripped. This isn't an
+oversight: `just` already has its own native support for a `dir/recipe`
+argument (`Positional::from_values` splits it at the last `/` into a
+search directory and a recipe name; `Search::justfile` then does `just`'s
+ordinary upward search starting from there, setting the recipe's own
+working directory). Verified directly — `just a/b/c/recipe`, invoked
+from a directory whose only justfile at that path is `a/b/c/justfile`,
+finds and runs it entirely unaided. So `run_recipe` for a `dir/recipe`
+namepath (the same one `list_recipes`/`show_recipe` report, prefixed by
+directory — see above) needs no filesystem walk or depth limit of its
+own to get `just` to run the right recipe from the right directory.
+
+What `just`'s own resolution *can't* help with is picking a devshell:
+`nix develop` needs an explicit installable before `just` even starts,
+so it has no way to defer to `just`'s internal search. `run_recipe`
+resolves this with a **bounded, two-candidate fallback** — mirroring
+`positional.rs`'s own last-`/` split purely to find the directory a
+`dir/` prefix points at, then: that directory's own `flake.nix` if it
+has one, else the repo root's, never an arbitrary intermediate ancestor.
+This was chosen over an unbounded upward walk after checking it against
+every actual child-justfile shape across this fleet's repos: it covers
+every case (a child with its own flake.nix, or one with none that's
+meant to share the root's) without the failure mode an unbounded walk
+introduces — picking up an unrelated intermediate `flake.nix` that
+happens to sit between the child and the root but wasn't intended as its
+devshell. The result reports both `cwd` (the directory a `dir/` prefix
+resolves to — a derived hint matching `just`'s own split, not
+independently re-verified against the actual justfile that ends up
+running) and `devshell` (the `flake.nix` path that backed it, or `none`)
+so a caller can always tell which devshell a recipe ran under — the
+original ergonomic gap this design closes (a `dir/recipe` invocation was
+silently wrapped in the *caller's* devshell rather than the recipe's
+own, or the directory's nearest available one).
 
 `dump_justfile`/`list_variables` are unaffected — they still read the
 already-compiled in-process `Compilation`. `list_recipes`/`show_recipe`
@@ -157,8 +196,12 @@ lookup, so the dev-loop doesn't need the `clown` flake input.
     <-- {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"error: recipe `fail` failed on line 5 with exit code 3"}],"isError":true}}
 
     --> {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"nixos-rebuild","async":true,"impure":true,"timeout":"25m"}}}
-    <-- {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"job_id\":\"nixos-rebuild-9f3c1a2b\"}"}]}}
+    <-- {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"job_id\":\"nixos-rebuild-9f3c1a2b\",\"cwd\":\"/home/user/repo/infra/hosts\",\"devshell\":\"/home/user/repo/infra/hosts/flake.nix\"}"}]}}
     (the caller then uses ringmaster's own job_wait/job_status/tail to observe completion)
+
+    --> {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"infra/lint"}}}
+    <-- {"jsonrpc":"2.0","id":4,"result":{"content":[{"type":"text","text":"resolved: cwd=/home/user/repo/infra, devshell=none"},{"type":"text","text":"stdout:\nlint ok\n"}]}}
+    (infra/ has no flake.nix of its own, so this fell back to the repo root's -- none exists there either, so it ran with no devshell at all)
 
 ## Limitations
 
@@ -197,6 +240,19 @@ lookup, so the dev-loop doesn't need the `clown` flake input.
 - Compact `list_recipes` reduces output size but doesn't bound it —
   a repo with enough recipes could still exceed the inline-result limit
   even in compact form. No pagination in this slice.
+- `run_recipe`'s devshell selection is a bounded two-candidate fallback
+  (the recipe's own directory, else the repo root's) — not an
+  arbitrary-depth upward walk. A `flake.nix` at an intermediate ancestor
+  (neither the recipe's own directory nor the root) is never picked up
+  automatically. Deliberate: verified against every real child-justfile
+  shape across the fleet at the time this was written, and an unbounded
+  walk trades that predictability for the risk of picking up an
+  unrelated ancestor flake never intended as the recipe's devshell.
+  Structures that don't fit either candidate (e.g. a repo with several
+  `flake.nix` files that aren't ancestors of the child justfiles that
+  need them) aren't resolved by this or any directory-walk strategy;
+  that's a separate, harder problem left for whenever it's actually
+  reported.
 
 ## More Information
 

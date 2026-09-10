@@ -323,13 +323,13 @@ fn tools_list_result() -> serde_json::Value {
       },
       {
         "name": "run_recipe",
-        "description": "Run one justfile recipe as a subprocess (wrapped in `nix develop -c` when a flake.nix is present) and return its captured stdout/stderr.",
+        "description": "Run one justfile recipe as a subprocess, including a recipe in another justfile found elsewhere in the repo tree (dir/recipe) -- just's own native search-directory resolution finds it, no depth limit. Wrapped in `nix develop` when a flake.nix backs it: that directory's own flake.nix if it has one, else the repo root's. Reports which directory the recipe resolves to and which devshell (if any) backed it, and returns its captured stdout/stderr.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "recipe": {
               "type": "string",
-              "description": "Recipe namepath to run.",
+              "description": "Recipe namepath to run, e.g. \"build\", \"module::recipe\", or \"dir/recipe\" for a recipe in another justfile.",
             },
             "args": {
               "type": "array",
@@ -460,18 +460,23 @@ fn tools_call(
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
+      let run_dir = search.working_directory.clone();
+      let recipe_dir = flake_target_dir(&run_dir, recipe);
+      let flake_dir = resolve_flake_dir(&recipe_dir, &run_dir);
+
       let mut invocation = Vec::with_capacity(args.len() + 1);
       invocation.push(recipe.to_owned());
       invocation.extend(args);
 
-      let justfile_dir = search.working_directory.clone();
-
       ok(
         id,
         if want_async {
-          run_recipe_async(justfile_dir, impure, invocation, recipe, timeout)
+          run_recipe_async(
+            run_dir, recipe_dir, flake_dir, impure, invocation, recipe, timeout,
+          )
         } else {
-          run_recipe_sync(recipe_command(justfile_dir, impure, &invocation), timeout)
+          let command = recipe_command(run_dir, flake_dir.clone(), impure, &invocation);
+          run_recipe_sync(command, recipe_dir, flake_dir, timeout)
         },
       )
     }
@@ -561,33 +566,115 @@ fn parse_duration(input: &str) -> Result<Duration, String> {
   Ok(Duration::from_secs(seconds))
 }
 
-/// Build the `Command` that actually runs a recipe: wrapped in
-/// `nix develop [--impure] -c just <invocation>` when `justfile_dir` has
-/// its own `flake.nix` (restores devshell tools for recipes that need
-/// them, matching the retired `just-us-agents` moxin's own behavior),
-/// otherwise a direct re-invocation of this same `just` binary
-/// (`env::current_exe`, falling back to a PATH-resolved `just` if that
-/// fails) so there is no ambiguity about which `just` runs a plain
-/// recipe.
-fn recipe_command(justfile_dir: PathBuf, impure: bool, invocation: &[String]) -> Command {
-  if justfile_dir.join("flake.nix").is_file() {
-    let mut command = Command::resolve("nix");
-    command.arg("develop");
-
-    if impure {
-      command.arg("--impure");
-    }
-
-    command.arg("-c").arg("just").args(invocation);
-    command.current_dir(justfile_dir);
-    command
-  } else {
-    let program = env::current_exe().unwrap_or_else(|_| PathBuf::from("just"));
-    let mut command = Command::new(program);
-    command.args(invocation);
-    command.current_dir(justfile_dir);
-    command
+/// Where `run_recipe`'s devshell selection should look for a
+/// `flake.nix` when `recipe` has a `dir/` prefix. `just` itself already
+/// natively resolves a `dir/recipe` argument: a bare recipe argument
+/// containing `/` is split at the *last* `/` into a search directory and
+/// a recipe name (`Positional::from_values`), and `Search::justfile`
+/// then does `just`'s ordinary upward search starting from there,
+/// setting the recipe's own working directory accordingly — entirely on
+/// its own, with no help needed from this server (verified directly:
+/// `just a/b/c/recipe`, invoked from a directory whose only justfile at
+/// that path is `a/b/c/justfile`, finds and runs it unaided). The one
+/// thing `just`'s own resolution can't do anything about is which
+/// devshell backs it: `nix develop` needs an explicit installable
+/// *before* `just` even starts, so it has no way to defer to `just`'s
+/// internal search. This mirrors that same last-`/` split purely to keep
+/// devshell selection pointed at wherever `just` will actually end up
+/// running — no filesystem walk, no depth limit, since `just`'s own
+/// search has neither.
+fn flake_target_dir(root: &Path, recipe: &str) -> PathBuf {
+  match recipe.rfind('/') {
+    Some(index) => root.join(&recipe[..index]),
+    None => root.to_owned(),
   }
+}
+
+/// Which directory's `flake.nix` backs `run_recipe`'s devshell for a
+/// recipe whose `flake_target_dir` is `recipe_dir`: `recipe_dir`'s own,
+/// if it has one, otherwise `root`'s — never an arbitrary intermediate
+/// ancestor. A bounded two-candidate fallback (not an unbounded upward
+/// walk) covers every directory shape seen across the fleet's
+/// justfiles: a child with its own flake.nix, or one with none that's
+/// meant to share the root's. An unbounded walk would additionally risk
+/// picking up an unrelated intermediate flake.nix that happens to sit
+/// between the child and the root but wasn't intended as its devshell.
+fn resolve_flake_dir(recipe_dir: &Path, root: &Path) -> Option<PathBuf> {
+  if recipe_dir.join("flake.nix").is_file() {
+    Some(recipe_dir.to_owned())
+  } else if root.join("flake.nix").is_file() {
+    Some(root.to_owned())
+  } else {
+    None
+  }
+}
+
+/// Build the `Command` that actually runs a recipe. `run_dir` is always
+/// the repo root (`search.working_directory`) — never a directory
+/// derived from `recipe`'s own `dir/` prefix — because `just`'s own
+/// native search-directory resolution needs `invocation_directory` (the
+/// new process's real OS-level cwd) to be the root for its relative-path
+/// splitting of `recipe` to land in the right place; see
+/// `flake_target_dir`. When `flake_dir` is `Some`, wraps in
+/// `nix develop [--impure] <flake_dir> -c just <invocation>`, passing
+/// `flake_dir` as an explicit path installable rather than relying on
+/// `nix develop`'s own cwd-based flake resolution — the two can
+/// legitimately differ (a child justfile with no `flake.nix` of its own
+/// borrows the root's, per `resolve_flake_dir`) and `nix develop` has no
+/// way to pick a different flake than whatever's at its own cwd
+/// otherwise. When `flake_dir` is `None`, falls back to a direct
+/// re-invocation of this same `just` binary (`env::current_exe`,
+/// falling back to a PATH-resolved `just` if that fails) — `just`
+/// resolves `recipe` itself either way.
+fn recipe_command(
+  run_dir: PathBuf,
+  flake_dir: Option<PathBuf>,
+  impure: bool,
+  invocation: &[String],
+) -> Command {
+  match flake_dir {
+    Some(flake_dir) => {
+      let mut command = Command::resolve("nix");
+      command.arg("develop").arg(flake_dir);
+
+      if impure {
+        command.arg("--impure");
+      }
+
+      command.arg("-c").arg("just").args(invocation);
+      command.current_dir(run_dir);
+      command
+    }
+    None => {
+      let program = env::current_exe().unwrap_or_else(|_| PathBuf::from("just"));
+      let mut command = Command::new(program);
+      command.args(invocation);
+      command.current_dir(run_dir);
+      command
+    }
+  }
+}
+
+/// The single-line `"resolved: cwd=..., devshell=..."` text block
+/// `run_recipe_sync` prepends to its content array — the sync path's own
+/// idiom (plain text blocks, not a JSON object) for answering "which
+/// devshell ran this recipe" (the ergonomic gap that motivated this
+/// resolution logic in the first place). `recipe_dir` (from
+/// `flake_target_dir`) reports where `recipe`'s own `dir/` prefix points
+/// — the directory `just`'s native search-directory resolution will
+/// land in for any recipe actually reachable via `list_recipes`/
+/// `show_recipe`'s discovery, though it's a derived hint rather than a
+/// literal `Command::current_dir` (that stays the repo root either way;
+/// see `recipe_command`).
+fn resolved_info_text(recipe_dir: &Path, flake_dir: &Option<PathBuf>) -> String {
+  format!(
+    "resolved: cwd={}, devshell={}",
+    recipe_dir.display(),
+    flake_dir.as_ref().map_or_else(
+      || "none".to_owned(),
+      |dir| dir.join("flake.nix").display().to_string()
+    )
+  )
 }
 
 /// Block on `child`, killing it if `timeout` elapses first. `Ok(None)`
@@ -618,7 +705,12 @@ fn wait_with_timeout(
 /// (no `--events-fd`/`EventSink` involved — `run_recipe` now always
 /// executes as a real subprocess, so plain pipe capture is sufficient
 /// and there's no in-process stdout to protect).
-fn run_recipe_sync(mut command: Command, timeout: Option<Duration>) -> serde_json::Value {
+fn run_recipe_sync(
+  mut command: Command,
+  recipe_dir: PathBuf,
+  flake_dir: Option<PathBuf>,
+  timeout: Option<Duration>,
+) -> serde_json::Value {
   command.stdout(Stdio::piped());
   command.stderr(Stdio::piped());
 
@@ -654,7 +746,10 @@ fn run_recipe_sync(mut command: Command, timeout: Option<Duration>) -> serde_jso
   let stdout = stdout_thread.join().unwrap_or_default();
   let stderr = stderr_thread.join().unwrap_or_default();
 
-  let mut content = Vec::new();
+  let mut content = vec![serde_json::json!({
+    "type": "text",
+    "text": resolved_info_text(&recipe_dir, &flake_dir),
+  })];
 
   if !stdout.is_empty() {
     content.push(serde_json::json!({
@@ -698,7 +793,9 @@ fn run_recipe_sync(mut command: Command, timeout: Option<Duration>) -> serde_jso
 /// `CLOWN_SESSION_ID`, which this process inherits from the clown
 /// stdio-bridge that spawned it.
 fn run_recipe_async(
-  justfile_dir: PathBuf,
+  run_dir: PathBuf,
+  recipe_dir: PathBuf,
+  flake_dir: Option<PathBuf>,
   impure: bool,
   invocation: Vec<String>,
   recipe: &str,
@@ -737,9 +834,13 @@ fn run_recipe_async(
     .map(PathBuf::from);
 
   let done_job_id = job_id.clone();
+  let result_cwd = recipe_dir.display().to_string();
+  let result_devshell = flake_dir
+    .as_ref()
+    .map(|dir| dir.join("flake.nix").display().to_string());
 
   thread::spawn(move || {
-    let mut command = recipe_command(justfile_dir, impure, &invocation);
+    let mut command = recipe_command(run_dir, flake_dir, impure, &invocation);
 
     let spool_file = spool_path.as_ref().and_then(|path| File::create(path).ok());
 
@@ -782,5 +883,9 @@ fn run_recipe_async(
       .status();
   });
 
-  tool_result_json(serde_json::json!({ "job_id": job_id }))
+  tool_result_json(serde_json::json!({
+    "job_id": job_id,
+    "cwd": result_cwd,
+    "devshell": result_devshell,
+  }))
 }

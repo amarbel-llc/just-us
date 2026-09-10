@@ -6,19 +6,53 @@
 # system-prompt-append` (docs/features/0005). `run_recipe` always
 # executes as a real subprocess (wrapped in `nix develop -c` when a
 # flake.nix is present) rather than in-process, so it can support
-# `impure`/`timeout`/`async` uniformly — see the 0006 addendum. Devshell
-# wrapping and full async job-completion/wake behavior have real
-# environmental dependencies (a real flake.nix + network, a live clown
-# session) that don't fit this hermetic sandbox well; they are verified
-# by manual smoke test instead (see the addendum's Verification
-# section). What's covered here: sync execution still works, timeout
-# kills a long-running recipe, and async returns a job id promptly via a
-# real `ringmaster start` call (on PATH in this sandbox — see bats.nix)
-# without waiting for the recipe to finish.
+# `impure`/`timeout`/`async` uniformly — see the 0006 addendum. A real
+# `nix develop` build and full async job-completion/wake behavior have
+# real environmental dependencies (network, a live clown session) that
+# don't fit this hermetic sandbox well; they are verified by manual
+# smoke test instead (see the addendum's Verification section). What's
+# covered here: sync execution still works, timeout kills a
+# long-running recipe, async returns a job id promptly via a real
+# `ringmaster start` call (on PATH in this sandbox — see bats.nix)
+# without waiting for the recipe to finish, and — via a stub `nix` on
+# PATH that records its own argv and execs straight through to the real
+# `just` binary — *which directory* `run_recipe` picks as the devshell
+# installable for a child-justfile recipe, without needing a real flake
+# evaluation to prove it.
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/common.bash"
   setup_test_home
+}
+
+# Shadows `nix` on PATH with a stub that records its own argv (`develop
+# <flake_dir> [--impure] -c just <invocation>`) to $NIX_STUB_LOG, then
+# execs straight through to the real just binary — so run_recipe's
+# devshell-selection logic (which directory it hands `nix develop` as
+# the installable) can be asserted without a real flake evaluation,
+# which needs network and doesn't fit this hermetic sandbox.
+install_nix_stub() {
+  export JUST_BIN="${JUST_BIN:-just}"
+  mkdir -p fakebin
+  export NIX_STUB_LOG="$PWD/nix-stub.log"
+
+  # `#!/usr/bin/env bash` doesn't resolve inside the nix build sandbox
+  # (bats-mcp), which has no /usr/bin/env -- use $BASH (this test is
+  # itself running under the very bash that's already on PATH here) as
+  # an absolute, always-resolvable shebang instead.
+  { echo "#!$BASH"; cat <<'STUB'
+printf '%s\n' "$*" > "$NIX_STUB_LOG"
+shift            # drop "develop"
+shift            # drop the flake_dir installable
+if [[ $1 == --impure ]]; then shift; fi
+shift            # drop "-c"
+shift            # drop the literal "just" recipe_command hardcodes
+exec "${JUST_BIN:-just}" "$@"
+STUB
+  } > fakebin/nix
+
+  chmod +x fakebin/nix
+  export PATH="$PWD/fakebin:$PATH"
 }
 
 @test "--mcp: tools/list advertises list_recipes, show_recipe, run_recipe" {
@@ -324,4 +358,119 @@ EOF
   assert_success
   [[ $output == *'\"job_id\"'* ]] || fail "async run_recipe did not return a job_id: $output"
   [[ $output != *'"isError"'* ]] || fail "dispatching an async job should not itself be an error: $output"
+}
+
+@test "--mcp: run_recipe resolves a child justfile's own directory as cwd" {
+  # A dir/recipe namepath must actually run from that directory, not the
+  # caller's (originally reported against eng/circus). No flake.nix
+  # anywhere in this fixture, so this only exercises the
+  # plain-re-invocation path -- the devshell-selection tests below cover
+  # the nix-wrapped path via the stub.
+  cat > justfile <<'EOF'
+root_recipe:
+    @echo root
+EOF
+
+  mkdir -p a
+  echo "child marker" > a/marker.txt
+
+  cat > a/justfile <<'EOF'
+show_marker:
+    @cat marker.txt
+EOF
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"a/show_marker"}}}'
+  assert_success
+
+  [[ $output == *'child marker'* ]] || fail "run_recipe did not run from the child justfile's own directory: $output"
+  [[ $output == *'cwd='*'/a, devshell=none'* ]] || fail "run_recipe did not report the resolved cwd/devshell: $output"
+}
+
+@test "--mcp: run_recipe wraps a child justfile in its own flake.nix, not the caller's" {
+  install_nix_stub
+
+  cat > justfile <<'EOF'
+root_recipe:
+    @echo root
+EOF
+  echo '# root flake -- must not be selected' > flake.nix
+
+  mkdir -p a
+  cat > a/justfile <<'EOF'
+build:
+    @echo built-in-child
+EOF
+  echo '# child flake -- must be selected' > a/flake.nix
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "$JUST_BIN" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"a/build"}}}'
+  assert_success
+
+  [[ $output == *'built-in-child'* ]] || fail "run_recipe did not execute the child recipe: $output"
+
+  flake_arg=$(awk '{print $2}' "$NIX_STUB_LOG")
+  [[ $flake_arg == "$PWD/a" ]] || fail "nix should have been given the child's own directory ($PWD/a) as the installable, got: $flake_arg"
+}
+
+@test "--mcp: run_recipe falls back to the root's flake.nix when the child justfile has none" {
+  install_nix_stub
+
+  cat > justfile <<'EOF'
+root_recipe:
+    @echo root
+EOF
+  echo '# root flake -- the only one available' > flake.nix
+
+  mkdir -p a
+  echo "child marker" > a/marker.txt
+  cat > a/justfile <<'EOF'
+show_marker:
+    @cat marker.txt
+EOF
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "$JUST_BIN" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"a/show_marker"}}}'
+  assert_success
+
+  # The devshell falls back to root, but the recipe itself must still
+  # run from the child's own directory -- these are decoupled.
+  [[ $output == *'child marker'* ]] || fail "run_recipe did not run from the child justfile's own directory despite the devshell fallback: $output"
+
+  flake_arg=$(awk '{print $2}' "$NIX_STUB_LOG")
+  [[ $flake_arg == "$PWD" ]] || fail "nix should have fallen back to the root directory ($PWD) as the installable, got: $flake_arg"
+}
+
+@test "--mcp: run_recipe reaches a recipe deeper than list_recipes's default max_depth" {
+  # run_recipe has no depth limit of its own -- it defers entirely to
+  # just's own native, unbounded search-directory resolution (see
+  # flake_target_dir's doc comment) rather than a bounded filesystem
+  # walk. list_recipes's max_depth exists only to bound *its own*
+  # enumeration output size; it was never meant to gate what run_recipe
+  # can execute, so a recipe list_recipes wouldn't surface without
+  # raising max_depth should still be directly runnable.
+  cat > justfile <<'EOF'
+root_recipe:
+    @echo root
+EOF
+
+  mkdir -p a/b/c
+  cat > a/b/c/justfile <<'EOF'
+depth4_recipe:
+    @echo depth4
+EOF
+
+  requests=$(printf '%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_recipes"}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"a/b/c/depth4_recipe"}}}')
+
+  run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" "$requests"
+  assert_success
+
+  list_reply=$(echo "$output" | sed -n '1p')
+  run_reply=$(echo "$output" | sed -n '2p')
+
+  [[ $list_reply != *'depth4_recipe'* ]] || fail "list_recipes's default max_depth should not surface the depth-4 recipe: $list_reply"
+  [[ $run_reply == *'depth4'* ]] || fail "run_recipe should reach and run the depth-4 recipe despite list_recipes's default depth limit: $run_reply"
+  [[ $run_reply != *'"isError"'* ]] || fail "the depth-4 recipe should run successfully: $run_reply"
 }
