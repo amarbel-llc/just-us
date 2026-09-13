@@ -100,6 +100,34 @@
           };
         };
 
+        # A fully static (pkgsStatic/musl) build of `just`, published as a
+        # just-us forge release asset for RFC 0005's tracer bullet:
+        # conformist's `check --profile` fetches this over https and puts it
+        # on PATH, letting a repo run the fork's justfile-* linters without
+        # taking just-us as a flake input. Deliberately minimal compared to
+        # the main `just` derivation above: no `RINGMASTER_BIN` (this binary
+        # is consumed standalone, outside Nix — an embedded nix store path
+        # for `ringmaster` would dangle there, and the tracer bullet only
+        # needs `--dump --dump-format model`, never `run_recipe`'s async
+        # mode) and no shell completions/man page (not meaningful for a
+        # --dump-only consumer). Mirrors conformist's own throwaway
+        # `nix/static-just-poc.nix` (pinned to a fixed rev, read-only
+        # w.r.t. just-us); this is the proper, source-controlled version.
+        justStatic = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+          pname = "just-static";
+          version = package.version;
+
+          src = ./.;
+
+          auditable = false;
+
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+          };
+
+          doCheck = false;
+        };
+
         # just-us-clown-plugin stages a clown plugin (clown-plugin-protocol(7) /
         # clown-json(5)) that contributes this repo's public justfile recipes
         # (name + doc line, no filtering) into the agent's dynamic system
@@ -231,6 +259,9 @@
 
           # Clown plugin closure for eng's mkCircus (docs/features/0004).
           just-us-clown-plugin = justUsClownPlugin;
+
+          # See justStatic's own comment above for what this is and isn't for.
+          static = justStatic;
         };
 
         checks = {
