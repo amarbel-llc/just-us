@@ -51,23 +51,20 @@
 { pkgs, ... }:
 
 let
+  # The schema+version pin, factored into its own file (nix/recipe-model-v1.jq)
+  # because it is ALSO published standalone as a conformist "named prelude"
+  # release asset alongside the static `just` binary — reading it here rather
+  # than duplicating the text keeps that published copy and this one from ever
+  # drifting apart.
+  modelPin = builtins.readFile ./recipe-model-v1.jq;
+
   # jq definitions shared by every filter. This is the "shared prelude" that
   # conformist#89's fix shape calls for: one place that knows the model's shape,
   # pins its version, and states the eng taxonomy.
   prelude = ''
     # --- conformist justfile-* model prelude (just-us.recipe-model v1) -------
 
-    # Pin the contract. The FDR's versioning rule is that additive fields do NOT
-    # bump `version`, so a consumer pins the integer and tolerates growth; a bump
-    # means a breaking change and MUST stop us rather than silently produce an
-    # empty finding stream that reads as a clean tree.
-    def model:
-      if .schema != "just-us.recipe-model" then
-        error("unexpected schema '\(.schema // "<absent>")'; expected 'just-us.recipe-model'")
-      elif .version != 1 then
-        error("unsupported recipe-model version '\(.version // "<absent>")'; this check pins version 1")
-      else . end;
-
+    ${modelPin}
     # Every recipe across the root AND all modules, already flattened by just
     # (conformist#89). Sorted by namepath, so findings come out in a stable order.
     def recipes: model | .recipes;
