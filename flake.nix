@@ -151,14 +151,16 @@
         #     Darwin builder (native or remote), which this Linux-only
         #     evaluator has neither. Building these two needs a real macOS
         #     host, not this flake evaluated harder.
-        justStaticAarch64Linux = pkgs.pkgsCross.aarch64-multiplatform.pkgsStatic.rustPlatform.buildRustPackage {
-          pname = "just-static";
-          version = package.version;
-          src = ./.;
-          auditable = false;
-          cargoLock.lockFile = ./Cargo.lock;
-          doCheck = false;
-        };
+        justStaticAarch64Linux =
+          pkgs.pkgsCross.aarch64-multiplatform.pkgsStatic.rustPlatform.buildRustPackage
+            {
+              pname = "just-static";
+              version = package.version;
+              src = ./.;
+              auditable = false;
+              cargoLock.lockFile = ./Cargo.lock;
+              doCheck = false;
+            };
 
         # just-us-clown-plugin stages a clown plugin (clown-plugin-protocol(7) /
         # clown-json(5)) that contributes this repo's public justfile recipes
