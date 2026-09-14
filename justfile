@@ -88,10 +88,15 @@ lint-action-versions:
 # Nix-module linters (eng FDR 0015 "consumer #3" of the profile
 # route), not a merge gate of its own.
 #
+# `--refresh`: a bare `git+https` flake ref without it can resolve
+# against nix's locally cached eval of a prior fetch of conformist's
+# `master`, silently running stale profile-handling logic instead of
+# actually current master (pennywise, 2026-09-14).
+#
 # cross-check conformist's ported justfile-* profile rules against the Nix-module versions
 [group: 'pre-build']
 lint-justfile-profile:
-  nix run 'git+https://code.linenisgreat.com/conformist.git' -- check --tree-root . --profile-only --profile conformist.profile
+  nix run --refresh 'git+https://code.linenisgreat.com/conformist.git' -- check --tree-root . --profile-only --profile conformist.profile
 
 [group: 'build']
 build: build-cargo
