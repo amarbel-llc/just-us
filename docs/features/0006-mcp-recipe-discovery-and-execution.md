@@ -209,13 +209,17 @@ lookup, so the dev-loop doesn't need the `clown` flake input.
   overrides the target justfile/environment already carries.
 - `timeout` only supports a single unit (`"25m"`, not `"1h30m"`) — no
   compound-duration parsing in this slice.
-- Cooperative cancellation (`ringmaster cancel`) is not wired up: an
-  async job can be cancelled at the ringmaster-journal level, but
-  `run_recipe`'s background thread doesn't poll for that record and stop
-  the subprocess. A crashed or killed `just --mcp` process orphans any
-  in-flight async job the same way any ringmaster producer crash does
-  (documented in `ringmaster(1)`'s CAVEATS) — the journal is
-  garbage-collected after the retention window, not reaped.
+- Cooperative cancellation (`ringmaster cancel`/`job_cancel`) is wired up
+  (just-us#33): `run_recipe_async` runs a second thread blocking in
+  `ringmaster wait --on-cancel` alongside the recipe, and on an observed
+  `cancel-requested` sends SIGTERM (then SIGKILL after a short grace
+  period) to the recipe's whole process group — unix only; on other
+  platforms an async job still can't be torn down early. A crashed or
+  killed `just --mcp` process still orphans any in-flight async job the
+  same way any ringmaster producer crash does (documented in
+  `ringmaster(1)`'s CAVEATS) — the journal is garbage-collected after
+  the retention window, not reaped; only a cooperative cancel via the
+  journal is handled.
 - `async`'s live output relies on the subprocess's stdout/stderr being
   redirected straight to the job's spool file — the sync path (no
   `async`) is buffered-until-exit, same as before.

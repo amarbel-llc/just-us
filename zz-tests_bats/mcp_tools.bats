@@ -441,6 +441,92 @@ EOF
   [[ $flake_arg == "$PWD" ]] || fail "nix should have fallen back to the root directory ($PWD) as the installable, got: $flake_arg"
 }
 
+@test "--mcp: run_recipe async job observes a ringmaster cancel-requested and stops the recipe (just-us#33)" {
+  # ringmaster's `job_cancel`/`ringmaster cancel` (RFC-0018) is
+  # cooperative: it only writes a non-terminal `cancel-requested` record
+  # and wakes the session. It signals no process, so the producer
+  # (run_recipe's own async thread) must observe it and tear the recipe
+  # down itself. Real ringmaster on PATH here (see bats.nix), same as
+  # the "returns a job id promptly" test above, so this exercises the
+  # actual RFC-0018 wait/cancel state machine rather than a stub.
+  #
+  # Runs the server in the background over a FIFO (not `run`, which
+  # blocks until its whole command exits) because this test must
+  # interact with the async job -- cancel it, poll its status -- while
+  # `--mcp` is still alive and holding stdin open, not after.
+  cat > justfile <<'EOF'
+slow:
+    touch started
+    sleep 30
+    touch finished
+EOF
+
+  # Pin a fixed session key for every ringmaster invocation this test
+  # makes: --mcp's own (via run_recipe_async's `ringmaster start`) AND
+  # this test's own `cancel`/`status` calls below. Without it, each
+  # `ringmaster` process falls back to a freshly generated UUIDv4 (no
+  # CLOWN_SESSION_ID/CLAUDE_SESSION_ID reaches this hermetic nix build
+  # sandbox), so the job `start` created and the job this test tries to
+  # `cancel` would resolve to two different, unrelated channels.
+  export CLOWN_SESSION_ID="just-us-mcp-cancel-test-$$"
+
+  # Opening a fifo for writing blocks until a reader exists (and vice
+  # versa) -- background the reader (--mcp, via <mcp.in) first, so it's
+  # already waiting to open its end when `exec 6>` opens the write end
+  # from this (foreground) shell; either open first would deadlock
+  # otherwise. fd 6, not 3: bats reserves fd 3 for its own internal
+  # test-result protocol, and clobbering it here silently breaks bats
+  # itself rather than failing this test cleanly.
+  mkfifo mcp.in
+  "${JUST_BIN:-just}" --mcp <mcp.in >mcp.out 2>mcp.err &
+  mcp_pid=$!
+  exec 6>mcp.in
+
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"slow","async":true}}}' >&6
+
+  for _ in $(seq 1 50); do
+    [[ -s mcp.out ]] && break
+    sleep 0.1
+  done
+
+  # job_id is nested inside the tool result's JSON-encoded "text" string,
+  # so it appears in mcp.out with escaped quotes (`\"job_id\":\"...\"`),
+  # not a bare `"job_id":"..."` a plain grep -o would match. Bash's
+  # quoted-glob parameter expansion treats the quoted part of the pattern
+  # literally (backslashes included), so this strips around it without
+  # any regex-escaping hazard.
+  raw=$(cat mcp.out)
+  job_id=${raw#*'\"job_id\":\"'}
+  job_id=${job_id%%'\"'*}
+  [[ -n $job_id && $job_id != "$raw" ]] || fail "no job_id in response: $raw"
+
+  for _ in $(seq 1 30); do
+    [[ -f started ]] && break
+    sleep 0.1
+  done
+  [[ -f started ]] || fail "recipe never started"
+
+  ringmaster cancel "$job_id" --message "just-us#33 test" >/dev/null
+
+  status=""
+  for _ in $(seq 1 50); do
+    status=$(ringmaster status "$job_id" --json 2>/dev/null | grep -o '"state":"[^"]*"' | cut -d'"' -f4)
+    [[ $status == aborted ]] && break
+    sleep 0.1
+  done
+
+  # Cleanup: closing fd 6 sends EOF on the fifo, which ends --mcp's
+  # stdin loop and the whole process (any still-running background job
+  # dies with it) -- only do this AFTER the assertions above have had
+  # their chance to observe the job's own outcome.
+  exec 6>&-
+  kill "$mcp_pid" 2>/dev/null || true
+  wait "$mcp_pid" 2>/dev/null || true
+
+  [[ $status == aborted ]] || fail "job did not reach aborted after cancel (last observed state: $status)"
+  [[ ! -f finished ]] || fail "recipe ran to completion despite the cancel"
+}
+
 @test "--mcp: run_recipe reaches a recipe deeper than list_recipes's default max_depth" {
   # run_recipe has no depth limit of its own -- it defers entirely to
   # just's own native, unbounded search-directory resolution (see

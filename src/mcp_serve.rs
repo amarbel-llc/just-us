@@ -2,8 +2,27 @@ use super::*;
 
 use {
   crate::recipe_model::ModelRecipe,
-  std::{io::BufRead, io::Read, time::Duration},
+  std::{
+    io::BufRead,
+    io::Read,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+  },
 };
+
+// `nix::sys::signal::Signal` is deliberately not imported under its bare
+// name: `use super::*` already brings `crate::signal::Signal` (the
+// `--events-fd`/interrupted-error enum, which has no SIGKILL variant) into
+// scope, so every reference below is fully qualified instead of aliased,
+// matching `src/signals.rs`'s own style. `std::os::unix::process::CommandExt`
+// is imported as `_`, not by name, for the same reason: `use super::*`
+// already brings the crate's OWN `command_ext::CommandExt` (which provides
+// `Command::resolve`) into scope, and a second `use` of a same-named item
+// would shadow it outright rather than merely collide; `as _` imports the
+// trait's methods (`process_group`) for method-call resolution without
+// binding a name at all, so both traits' methods stay reachable.
+#[cfg(unix)]
+use {nix::unistd::Pid, std::os::unix::process::CommandExt as _};
 
 /// The clown plugin protocol's fixed prompt name for dynamic
 /// system-prompt contribution (RFC 0002 §5, docs/features/0005). MUST
@@ -782,6 +801,86 @@ fn run_recipe_sync(
   }
 }
 
+/// How long to wait after SIGTERM before escalating to SIGKILL, for a
+/// recipe process group that hasn't exited on its own after an observed
+/// `cancel-requested` (just-us#33).
+#[cfg(unix)]
+const CANCEL_GRACE_PERIOD: Duration = Duration::from_secs(2);
+
+/// Ringmaster job states that end the job (RFC-0018 §2). `wait --on-cancel`
+/// only ever stops for one of these or a `cancel-requested` record, so a
+/// non-terminal state it returns means the latter was observed.
+#[cfg(unix)]
+const RINGMASTER_TERMINAL_STATES: &[&str] = &["succeeded", "failed", "aborted", "interrupted"];
+
+/// Watch `job_id` for a cooperative cancel (ringmaster RFC-0018) and, if
+/// one arrives before the job ends by any other path, kill `pid`'s whole
+/// process group: SIGTERM first, escalating to SIGKILL after
+/// `CANCEL_GRACE_PERIOD` if anything in the group is still alive. Sets
+/// `cancelled` before signaling, so `run_recipe_async`'s own wait on the
+/// same child reports the outcome as an observed cancel rather than an
+/// ordinary failure once the signal reaps it (just-us#33: previously
+/// nothing observed `cancel-requested` at all, so a cancelled recipe ran
+/// to completion).
+///
+/// `run_recipe_async` spawns its child with `process_group(0)` (the
+/// unix-only `CommandExt` extension), so the child's pid IS its process
+/// group id — signaling `-pid` reaches it and every descendant it spawns
+/// (e.g. `nix develop -c just ...`'s own per-recipe-line child processes),
+/// not just the immediate `nix`/`just` process.
+///
+/// `ringmaster wait <job_id> --on-cancel --json --timeout 0` blocks until
+/// EITHER a `cancel-requested` record or any terminal record is written —
+/// whichever comes first — so this call also returns (harmlessly) once
+/// `run_recipe_async` writes the job's own terminal record on ordinary
+/// completion; the terminal-state check below is what tells the two cases
+/// apart. A `ringmaster` predating RFC-0018 (rejects `--on-cancel`), or any
+/// other failure, is treated the same as "nothing to observe" — this is
+/// best-effort cancellation, not a hard dependency of the recipe running.
+#[cfg(unix)]
+fn spawn_cancel_observer(job_id: String, pid: u32, cancelled: Arc<AtomicBool>) {
+  thread::spawn(move || {
+    let Ok(output) = ringmaster_command()
+      .args(["wait", &job_id, "--on-cancel", "--json", "--timeout", "0"])
+      .output()
+    else {
+      return;
+    };
+
+    if !output.status.success() {
+      return;
+    }
+
+    let Ok(status) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+      return;
+    };
+
+    let state = status
+      .get("state")
+      .and_then(serde_json::Value::as_str)
+      .unwrap_or_default();
+
+    if RINGMASTER_TERMINAL_STATES.contains(&state) {
+      return;
+    }
+
+    cancelled.store(true, Ordering::SeqCst);
+
+    let Ok(pid) = i32::try_from(pid) else {
+      return;
+    };
+    let pgid = Pid::from_raw(-pid);
+
+    let _ = nix::sys::signal::kill(pgid, nix::sys::signal::Signal::SIGTERM);
+
+    thread::sleep(CANCEL_GRACE_PERIOD);
+
+    if nix::sys::signal::kill(pgid, None).is_ok() {
+      let _ = nix::sys::signal::kill(pgid, nix::sys::signal::Signal::SIGKILL);
+    }
+  });
+}
+
 /// Run `invocation` in the background as a real ringmaster job producer
 /// (RFC-0009/0010/0011): `ringmaster start` allocates the job and prints
 /// its id, the recipe's own stdout/stderr are redirected straight to the
@@ -834,6 +933,9 @@ fn run_recipe_async(
     .map(PathBuf::from);
 
   let done_job_id = job_id.clone();
+  #[cfg(unix)]
+  let cancel_job_id = job_id.clone();
+  let cancelled = Arc::new(AtomicBool::new(false));
   let result_cwd = recipe_dir.display().to_string();
   let result_devshell = flake_dir
     .as_ref()
@@ -841,6 +943,14 @@ fn run_recipe_async(
 
   thread::spawn(move || {
     let mut command = recipe_command(run_dir, flake_dir, impure, &invocation);
+
+    // Own process group (unix only): a cancel needs to reach every
+    // descendant this spawns (e.g. `nix develop -c just ...`'s own
+    // per-recipe-line children), not just the immediate child
+    // (just-us#33). `0` sets the new group's id to the child's own pid,
+    // which `spawn_cancel_observer` reconstructs from `child.id()`.
+    #[cfg(unix)]
+    command.process_group(0);
 
     let spool_file = spool_path.as_ref().and_then(|path| File::create(path).ok());
 
@@ -856,16 +966,23 @@ fn run_recipe_async(
 
     let (state, message) = match command.spawn() {
       Ok(mut child) => {
+        #[cfg(unix)]
+        spawn_cancel_observer(cancel_job_id, child.id(), Arc::clone(&cancelled));
+
         let status = match timeout {
           Some(timeout) => wait_with_timeout(&mut child, timeout),
           None => child.wait().map(Some),
         };
 
-        match status {
-          Ok(Some(status)) if status.success() => ("succeeded", "recipe completed".to_owned()),
-          Ok(Some(status)) => ("failed", format!("recipe exited with {status}")),
-          Ok(None) => ("failed", "recipe timed out".to_owned()),
-          Err(io_error) => ("failed", format!("wait failed: {io_error}")),
+        if cancelled.load(Ordering::SeqCst) {
+          ("aborted", "cancelled via ringmaster job_cancel".to_owned())
+        } else {
+          match status {
+            Ok(Some(status)) if status.success() => ("succeeded", "recipe completed".to_owned()),
+            Ok(Some(status)) => ("failed", format!("recipe exited with {status}")),
+            Ok(None) => ("failed", "recipe timed out".to_owned()),
+            Err(io_error) => ("failed", format!("wait failed: {io_error}")),
+          }
         }
       }
       Err(io_error) => ("failed", format!("failed to start recipe: {io_error}")),
