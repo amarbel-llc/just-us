@@ -128,6 +128,38 @@
           doCheck = false;
         };
 
+        # Cross-compiled aarch64-linux static build for eng FDR 0015's
+        # "give me per-platform static builds" ask. True musl/pkgsStatic,
+        # same minimal shape as `justStatic` above (no RINGMASTER_BIN, no
+        # completions/man page). Cross-compiled via nixpkgs'
+        # `pkgsCross.aarch64-multiplatform`, so it's reachable from a
+        # single x86_64-linux evaluator with no remote builder or binfmt
+        # emulation.
+        #
+        # Darwin (x86_64 and aarch64) was ALSO attempted and dropped, not
+        # merely deferred:
+        #   - `pkgs.pkgsCross.x86_64-darwin` doesn't exist at all —
+        #     `lib.systems.examples` has no such attribute (Intel Mac cross
+        #     support isn't in mainline nixpkgs' example set).
+        #   - `pkgs.pkgsCross.aarch64-darwin` exists but nixpkgs REFUSES to
+        #     evaluate it from an `x86_64-linux` hostPlatform: the darwin
+        #     toolchain (`arm64-apple-darwin-cctools`) is marked
+        #     `meta.platforms = [ "aarch64-darwin" ]` with no override
+        #     short of `NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM=1` — and even past
+        #     that gate, cctools/ld64 are darwin SDK binaries with no
+        #     Linux-buildable path in mainline nixpkgs; they need an actual
+        #     Darwin builder (native or remote), which this Linux-only
+        #     evaluator has neither. Building these two needs a real macOS
+        #     host, not this flake evaluated harder.
+        justStaticAarch64Linux = pkgs.pkgsCross.aarch64-multiplatform.pkgsStatic.rustPlatform.buildRustPackage {
+          pname = "just-static";
+          version = package.version;
+          src = ./.;
+          auditable = false;
+          cargoLock.lockFile = ./Cargo.lock;
+          doCheck = false;
+        };
+
         # just-us-clown-plugin stages a clown plugin (clown-plugin-protocol(7) /
         # clown-json(5)) that contributes this repo's public justfile recipes
         # (name + doc line, no filtering) into the agent's dynamic system
@@ -262,6 +294,10 @@
 
           # See justStatic's own comment above for what this is and isn't for.
           static = justStatic;
+
+          # Cross-compiled sibling -- see its own comment above (darwin
+          # targets were attempted and dropped, not merely deferred).
+          static-aarch64-unknown-linux-musl = justStaticAarch64Linux;
         };
 
         checks = {
