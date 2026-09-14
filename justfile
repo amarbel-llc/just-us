@@ -76,6 +76,23 @@ lint-forbid:
 lint-action-versions:
   cargo lrun --package action-versions
 
+# Runs conformist's ported justfile-* linters (conformist.profile: two
+# rules cross-checked against nix/linters/justfile-{recipe-names,
+# orphan-summary}.nix) over THIS repo's own justfile via a bare `nix
+# run` -- no flake input, so no cycle with conformist (which
+# fixed-output-fetches just-us source to self-lint the other way).
+# `--profile-only`, not `--config-file`: the exit code reflects only
+# the profile's two rules, not this repo's own checks.formatting
+# composition. Not in `lint`/`ci`/`default`: network fetch of
+# conformist over git+https, and this is a cross-check against the
+# Nix-module linters (eng FDR 0015 "consumer #3" of the profile
+# route), not a merge gate of its own.
+#
+# cross-check conformist's ported justfile-* profile rules against the Nix-module versions
+[group: 'pre-build']
+lint-justfile-profile:
+  nix run 'git+https://code.linenisgreat.com/conformist.git' -- check --tree-root . --profile-only --profile conformist.profile
+
 [group: 'build']
 build: build-cargo
 
