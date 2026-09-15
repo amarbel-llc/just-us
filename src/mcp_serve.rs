@@ -5,7 +5,10 @@ use {
   std::{
     io::BufRead,
     io::Read,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+      atomic::{AtomicBool, Ordering},
+      mpsc,
+    },
     time::Duration,
   },
 };
@@ -543,15 +546,59 @@ fn tool_error_text(message: String) -> serde_json::Value {
 }
 
 /// The `ringmaster` binary to shell out to for `run_recipe`'s async mode.
-/// Prefers the build-time pin (`RINGMASTER_BIN`, set by flake.nix's `just`
-/// derivation from clown's `ringmaster` package — see build.rs) so a
-/// nix-built `just` never depends on `ringmaster` being ambiently on
-/// PATH; falls back to a plain PATH lookup so an ad-hoc `cargo build`
-/// dev-loop still works without that input.
+/// A non-empty `JUST_US_RINGMASTER_BIN` in the environment wins outright
+/// (a runtime hook so a test can stand in a stub for the real binary —
+/// just-us#34's hung-`ringmaster start` regression test needs one that
+/// never returns). Otherwise prefers the build-time pin
+/// (`RINGMASTER_BIN`, set by flake.nix's `just` derivation from clown's
+/// `ringmaster` package — see build.rs) so a nix-built `just` never
+/// depends on `ringmaster` being ambiently on PATH; falls back to a plain
+/// PATH lookup so an ad-hoc `cargo build` dev-loop still works without
+/// that input.
 fn ringmaster_command() -> Command {
+  if let Some(path) = env::var_os("JUST_US_RINGMASTER_BIN").filter(|path| !path.is_empty()) {
+    return Command::new(path);
+  }
+
   match option_env!("RINGMASTER_BIN") {
     Some(path) => Command::new(path),
     None => Command::resolve("ringmaster"),
+  }
+}
+
+/// Bound on each `ringmaster` CLI call the async dispatch path makes
+/// (`start`, `spool-path`, `done`). Every one of them is a local journal
+/// write that should take milliseconds; one that hangs (a wedged nudge
+/// socket, a stalled filesystem) used to block the tool call — and, this
+/// server being serial, every request queued behind it — indefinitely
+/// (just-us#34). `async: true` must either create the job or error.
+const RINGMASTER_CALL_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Run `ringmaster <args>` to completion under `RINGMASTER_CALL_TIMEOUT`
+/// and return its trimmed stdout. `Err` carries the tool-facing message
+/// for every failure mode: binary not found, timed out (and killed), or
+/// a non-zero exit (with its stderr).
+fn ringmaster_call(args: &[&str]) -> Result<String, String> {
+  let subcommand = args.first().copied().unwrap_or_default();
+  let mut command = ringmaster_command();
+  command.args(args);
+
+  let captured = run_captured(command, Some(RINGMASTER_CALL_TIMEOUT))
+    .map_err(|io_error| format!("ringmaster is not available: {io_error}"))?;
+
+  match captured.status {
+    Ok(Some(status)) if status.success() => {
+      Ok(String::from_utf8_lossy(&captured.stdout).trim().to_owned())
+    }
+    Ok(Some(_)) => Err(format!(
+      "ringmaster {subcommand} failed: {}",
+      String::from_utf8_lossy(&captured.stderr).trim()
+    )),
+    Ok(None) => Err(format!(
+      "ringmaster {subcommand} timed out after {}s and was killed",
+      RINGMASTER_CALL_TIMEOUT.as_secs()
+    )),
+    Err(io_error) => Err(format!("ringmaster {subcommand}: wait failed: {io_error}")),
   }
 }
 
@@ -696,9 +743,57 @@ fn resolved_info_text(recipe_dir: &Path, flake_dir: &Option<PathBuf>) -> String 
   )
 }
 
-/// Block on `child`, killing it if `timeout` elapses first. `Ok(None)`
-/// means it was killed for timing out; the caller distinguishes that
-/// from a normal exit status.
+/// Send `signal` to the process group whose id is `pid` — i.e. to `pid`
+/// and every descendant it spawned, given the child was started with
+/// `process_group(0)` (which makes its pid its pgid). Best-effort: an
+/// already-empty group (ESRCH) or an unrepresentable pid is ignored.
+#[cfg(unix)]
+fn signal_process_group(pid: u32, signal: nix::sys::signal::Signal) {
+  let Ok(pid) = i32::try_from(pid) else {
+    return;
+  };
+
+  let _ = nix::sys::signal::kill(Pid::from_raw(-pid), signal);
+}
+
+/// Tear down `child` and everything it spawned, then reap it. Unix: the
+/// whole process group gets SIGTERM, up to `CANCEL_GRACE_PERIOD` to exit
+/// on its own, then SIGKILL. Elsewhere only the immediate child can be
+/// killed. Killing just the immediate child (`just`, or `nix develop`)
+/// was the wedge in just-us#34: its per-recipe-line `sh` children and
+/// anything they backgrounded survived, still holding the captured
+/// stdout/stderr pipes, so the readers never saw EOF and the tool call
+/// never returned.
+fn kill_process_tree(child: &mut process::Child) {
+  #[cfg(unix)]
+  {
+    signal_process_group(child.id(), nix::sys::signal::Signal::SIGTERM);
+
+    let deadline = Instant::now() + CANCEL_GRACE_PERIOD;
+
+    while Instant::now() < deadline {
+      if matches!(child.try_wait(), Ok(Some(_))) {
+        break;
+      }
+
+      thread::sleep(Duration::from_millis(50));
+    }
+
+    signal_process_group(child.id(), nix::sys::signal::Signal::SIGKILL);
+  }
+
+  #[cfg(not(unix))]
+  {
+    let _ = child.kill();
+  }
+
+  let _ = child.wait();
+}
+
+/// Block on `child`, killing it (and its process tree — see
+/// `kill_process_tree`) if `timeout` elapses first. `Ok(None)` means it
+/// was killed for timing out; the caller distinguishes that from a
+/// normal exit status.
 fn wait_with_timeout(
   child: &mut process::Child,
   timeout: Duration,
@@ -711,8 +806,7 @@ fn wait_with_timeout(
     }
 
     if start.elapsed() >= timeout {
-      let _ = child.kill();
-      let _ = child.wait();
+      kill_process_tree(child);
       return Ok(None);
     }
 
@@ -720,50 +814,125 @@ fn wait_with_timeout(
   }
 }
 
-/// Run `command` to completion, capturing stdout/stderr the plain way
-/// (no `--events-fd`/`EventSink` involved — `run_recipe` now always
-/// executes as a real subprocess, so plain pipe capture is sufficient
-/// and there's no in-process stdout to protect).
-fn run_recipe_sync(
-  mut command: Command,
-  recipe_dir: PathBuf,
-  flake_dir: Option<PathBuf>,
-  timeout: Option<Duration>,
-) -> serde_json::Value {
+/// How long `run_captured` keeps reading a finished process's stdout/
+/// stderr before returning with whatever has arrived. The process itself
+/// has already exited (or been killed) by then, so all that can still be
+/// in flight is the pipe buffer's tail — unless a descendant it left
+/// running (a backgrounded daemon the recipe deliberately started, say)
+/// still holds the write end, in which case EOF never comes and waiting
+/// for it wedged the call (just-us#34).
+const PIPE_DRAIN_GRACE: Duration = Duration::from_secs(2);
+
+/// What `run_captured` observed: the wait outcome (`Ok(None)` = timed out
+/// and killed), everything read from each pipe, and whether both pipes
+/// actually reached EOF (`drained: false` means a descendant still held
+/// one open when `PIPE_DRAIN_GRACE` ran out and later output was dropped).
+struct Captured {
+  status: io::Result<Option<ExitStatus>>,
+  stdout: Vec<u8>,
+  stderr: Vec<u8>,
+  drained: bool,
+}
+
+/// Read `pipe` to EOF on a background thread, forwarding each chunk as it
+/// arrives so the caller can stop collecting at a deadline and still keep
+/// everything read up to that point (a single `read_to_end` would hold
+/// it all hostage until EOF). The channel closing is the EOF signal.
+fn drain_in_background<R: Read + Send + 'static>(pipe: Option<R>) -> mpsc::Receiver<Vec<u8>> {
+  let (sender, receiver) = mpsc::channel();
+
+  thread::spawn(move || {
+    let Some(mut pipe) = pipe else {
+      return;
+    };
+
+    let mut chunk = [0u8; 8192];
+
+    loop {
+      match pipe.read(&mut chunk) {
+        Ok(0) | Err(_) => return,
+        Ok(read) => {
+          if sender.send(chunk[..read].to_vec()).is_err() {
+            return;
+          }
+        }
+      }
+    }
+  });
+
+  receiver
+}
+
+/// Collect chunks from `receiver` until it closes (EOF — `true`) or
+/// `deadline` passes (`false`), returning what arrived either way.
+fn collect_until(receiver: &mpsc::Receiver<Vec<u8>>, deadline: Instant) -> (Vec<u8>, bool) {
+  let mut collected = Vec::new();
+
+  loop {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+
+    match receiver.recv_timeout(remaining) {
+      Ok(chunk) => collected.extend(chunk),
+      Err(mpsc::RecvTimeoutError::Disconnected) => return (collected, true),
+      Err(mpsc::RecvTimeoutError::Timeout) => return (collected, false),
+    }
+  }
+}
+
+/// Run `command` to completion in its own process group (unix),
+/// capturing stdout/stderr, honoring `timeout` via `wait_with_timeout`,
+/// and — crucially — always returning: once the process is gone the
+/// pipes are drained for at most `PIPE_DRAIN_GRACE`, never "until EOF".
+/// `Err` is a spawn failure. Backs both `run_recipe`'s sync path and the
+/// async path's `ringmaster` CLI calls.
+fn run_captured(mut command: Command, timeout: Option<Duration>) -> io::Result<Captured> {
   command.stdout(Stdio::piped());
   command.stderr(Stdio::piped());
 
-  let mut child = match command.spawn() {
-    Ok(child) => child,
-    Err(io_error) => return tool_error_text(format!("failed to start recipe: {io_error}")),
-  };
+  #[cfg(unix)]
+  command.process_group(0);
 
-  let mut stdout_pipe = child.stdout.take();
-  let mut stderr_pipe = child.stderr.take();
+  let mut child = command.spawn()?;
 
-  let stdout_thread = thread::spawn(move || {
-    let mut buffer = Vec::new();
-    if let Some(pipe) = &mut stdout_pipe {
-      let _ = pipe.read_to_end(&mut buffer);
-    }
-    buffer
-  });
-
-  let stderr_thread = thread::spawn(move || {
-    let mut buffer = Vec::new();
-    if let Some(pipe) = &mut stderr_pipe {
-      let _ = pipe.read_to_end(&mut buffer);
-    }
-    buffer
-  });
+  let stdout_receiver = drain_in_background(child.stdout.take());
+  let stderr_receiver = drain_in_background(child.stderr.take());
 
   let status = match timeout {
     Some(timeout) => wait_with_timeout(&mut child, timeout),
     None => child.wait().map(Some),
   };
 
-  let stdout = stdout_thread.join().unwrap_or_default();
-  let stderr = stderr_thread.join().unwrap_or_default();
+  let deadline = Instant::now() + PIPE_DRAIN_GRACE;
+  let (stdout, stdout_drained) = collect_until(&stdout_receiver, deadline);
+  let (stderr, stderr_drained) = collect_until(&stderr_receiver, deadline);
+
+  Ok(Captured {
+    status,
+    stdout,
+    stderr,
+    drained: stdout_drained && stderr_drained,
+  })
+}
+
+/// Run `command` to completion, capturing stdout/stderr the plain way
+/// (no `--events-fd`/`EventSink` involved — `run_recipe` now always
+/// executes as a real subprocess, so plain pipe capture is sufficient
+/// and there's no in-process stdout to protect).
+fn run_recipe_sync(
+  command: Command,
+  recipe_dir: PathBuf,
+  flake_dir: Option<PathBuf>,
+  timeout: Option<Duration>,
+) -> serde_json::Value {
+  let Captured {
+    status,
+    stdout,
+    stderr,
+    drained,
+  } = match run_captured(command, timeout) {
+    Ok(captured) => captured,
+    Err(io_error) => return tool_error_text(format!("failed to start recipe: {io_error}")),
+  };
 
   let mut content = vec![serde_json::json!({
     "type": "text",
@@ -781,6 +950,16 @@ fn run_recipe_sync(
     content.push(serde_json::json!({
       "type": "text",
       "text": format!("stderr:\n{}", String::from_utf8_lossy(&stderr)),
+    }));
+  }
+
+  if !drained {
+    content.push(serde_json::json!({
+      "type": "text",
+      "text": format!(
+        "note: the recipe's stdout/stderr pipes are still held open by a process it left running (a backgrounded daemon?); output is shown up to {}s after the recipe exited and anything written later was dropped",
+        PIPE_DRAIN_GRACE.as_secs()
+      ),
     }));
   }
 
@@ -866,18 +1045,11 @@ fn spawn_cancel_observer(job_id: String, pid: u32, cancelled: Arc<AtomicBool>) {
 
     cancelled.store(true, Ordering::SeqCst);
 
-    let Ok(pid) = i32::try_from(pid) else {
-      return;
-    };
-    let pgid = Pid::from_raw(-pid);
-
-    let _ = nix::sys::signal::kill(pgid, nix::sys::signal::Signal::SIGTERM);
+    signal_process_group(pid, nix::sys::signal::Signal::SIGTERM);
 
     thread::sleep(CANCEL_GRACE_PERIOD);
 
-    if nix::sys::signal::kill(pgid, None).is_ok() {
-      let _ = nix::sys::signal::kill(pgid, nix::sys::signal::Signal::SIGKILL);
-    }
+    signal_process_group(pid, nix::sys::signal::Signal::SIGKILL);
   });
 }
 
@@ -900,35 +1072,17 @@ fn run_recipe_async(
   recipe: &str,
   timeout: Option<Duration>,
 ) -> serde_json::Value {
-  let start = ringmaster_command()
-    .args(["start", "--source", "just-us", "--label", recipe])
-    .output();
-
-  let job_id = match start {
-    Ok(output) if output.status.success() => {
-      String::from_utf8_lossy(&output.stdout).trim().to_owned()
-    }
-    Ok(output) => {
-      return tool_error_text(format!(
-        "ringmaster start failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-      ));
-    }
-    Err(io_error) => {
-      return tool_error_text(format!("ringmaster is not available: {io_error}"));
-    }
+  let job_id = match ringmaster_call(&["start", "--source", "just-us", "--label", recipe]) {
+    Ok(job_id) => job_id,
+    Err(message) => return tool_error_text(message),
   };
 
   if job_id.is_empty() {
     return tool_error_text("ringmaster start produced no job id".to_owned());
   }
 
-  let spool_path = ringmaster_command()
-    .args(["spool-path", &job_id])
-    .output()
+  let spool_path = ringmaster_call(&["spool-path", &job_id])
     .ok()
-    .filter(|output| output.status.success())
-    .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
     .filter(|path| !path.is_empty())
     .map(PathBuf::from);
 
@@ -988,16 +1142,14 @@ fn run_recipe_async(
       Err(io_error) => ("failed", format!("failed to start recipe: {io_error}")),
     };
 
-    let _ = ringmaster_command()
-      .args([
-        "done",
-        &done_job_id,
-        "--state",
-        state,
-        "--message",
-        &message,
-      ])
-      .status();
+    let _ = ringmaster_call(&[
+      "done",
+      &done_job_id,
+      "--state",
+      state,
+      "--message",
+      &message,
+    ]);
   });
 
   tool_result_json(serde_json::json!({

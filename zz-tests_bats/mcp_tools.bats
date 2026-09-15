@@ -340,6 +340,73 @@ EOF
   [[ $output == *'timed out'* ]] || fail "timeout message missing: $output"
 }
 
+@test "--mcp: run_recipe timeout kills the recipe's descendants too, not just the immediate child (just-us#34)" {
+  # Killing only the direct child (`just`, or `nix develop`) on timeout
+  # left its per-line `sh` children and anything they spawned alive AND
+  # still holding the captured stdout/stderr pipes -- so the reader
+  # threads never saw EOF and the tool call never returned, wedging the
+  # whole (serial) server behind it. The recipe must be torn down as a
+  # process group, and the response must come back promptly.
+  cat > justfile <<'EOF'
+hang:
+    sh -c 'sleep 3; touch survived' &
+    sleep 30
+EOF
+
+  run --separate-stderr timeout --preserve-status 8s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"hang","timeout":"1s"}}}'
+  assert_success
+  [[ $output == *'"isError":true'* ]] || fail "timed-out recipe should set isError: $output"
+  [[ $output == *'timed out'* ]] || fail "timeout message missing: $output"
+
+  # The backgrounded grandchild was in the recipe's process group, so
+  # the timeout kill must have reached it before it could finish.
+  sleep 4
+  [[ ! -f survived ]] || fail "a backgrounded grandchild outlived the timeout kill"
+}
+
+@test "--mcp: run_recipe returns when the recipe exits even if a daemon it left behind still holds its stdout (just-us#34)" {
+  # A recipe that backgrounds a daemon (`fibby ... &`) and exits leaves
+  # that daemon holding the captured pipes open. The sync path used to
+  # block until EOF -- i.e. until the daemon died -- instead of returning
+  # once the recipe itself exited. Now it drains for a short grace period
+  # and returns what it has, flagging the still-open pipe.
+  cat > justfile <<'EOF'
+daemon:
+    sleep 20 &
+    echo spawned
+EOF
+
+  run --separate-stderr timeout --preserve-status 6s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"daemon"}}}'
+  assert_success
+  [[ $output == *'spawned'* ]] || fail "run_recipe did not capture the recipe's own stdout: $output"
+  [[ $output != *'"isError"'* ]] || fail "a recipe that exited 0 should not be an error just because a daemon outlived it: $output"
+  [[ $output == *'still held open'* ]] || fail "response should flag that a descendant still holds the output pipes: $output"
+}
+
+@test "--mcp: run_recipe async errors out instead of blocking forever when ringmaster start hangs (just-us#34)" {
+  # `async: true` must either create the job or fail -- a `ringmaster
+  # start` that never returns used to block the tool call (and, this
+  # server being serial, every request queued behind it) indefinitely.
+  # JUST_US_RINGMASTER_BIN overrides both the build-time pin and the
+  # PATH lookup so a hanging stub can stand in for ringmaster here.
+  cat > justfile <<'EOF'
+build:
+    @echo build
+EOF
+
+  { echo "#!$BASH"; echo 'exec sleep 60'; } > ringmaster-stub
+  chmod +x ringmaster-stub
+  export JUST_US_RINGMASTER_BIN="$PWD/ringmaster-stub"
+
+  run --separate-stderr timeout --preserve-status 15s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"build","async":true}}}'
+  assert_success
+  [[ $output == *'"isError":true'* ]] || fail "a hung ringmaster start should be reported as an error, not silently waited on: $output"
+  [[ $output == *'ringmaster start'* && $output == *'timed out'* ]] || fail "error should name the hung ringmaster start: $output"
+}
+
 @test "--mcp: run_recipe async returns a job id promptly without waiting for completion" {
   cat > justfile <<'EOF'
 slow:

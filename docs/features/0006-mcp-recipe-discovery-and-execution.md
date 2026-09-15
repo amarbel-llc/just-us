@@ -156,9 +156,27 @@ additionally compile any *discovered child* justfiles independently
 to subprocess spawning.
 
 **`timeout`** (e.g. `"25m"`, `"90s"`, `"2h"` — single-unit only, no
-compound forms like `"1h30m"` in this slice) polls the child and kills
-it on expiry, reporting `isError: true` with a "timed out" message and
-whatever output was captured before the kill.
+compound forms like `"1h30m"` in this slice) polls the child and, on
+expiry, tears down its whole **process group** — the child is spawned
+with `process_group(0)` on unix, so SIGTERM (then SIGKILL after a short
+grace period) reaches `just`'s per-recipe-line `sh` children and
+anything they backgrounded, not just the immediate `just`/`nix develop`
+process — reporting `isError: true` with a "timed out" message and
+whatever output was captured before the kill. Killing only the
+immediate child was just-us#34: the orphaned descendants kept the
+captured stdout/stderr pipes open, the readers never saw EOF, and the
+tool call never returned — wedging the serial server, and with it every
+later call (async ones included, which is why "no ringmaster job was
+created" was the observed symptom for those).
+
+**Output capture always terminates.** Once the recipe process is gone
+(exited or killed), the sync path drains its stdout/stderr for at most
+a short grace period (2s) rather than "until EOF": a daemon the recipe
+deliberately left running (`fibby … &`) inherits the pipes and would
+otherwise hold the call open for its own lifetime. A pipe still open
+when the grace runs out is flagged with a `note:` text block (later
+output is dropped); the recipe's own exit status is still what decides
+`isError`.
 
 **`async: true`** makes `run_recipe` a real **ringmaster job producer**
 (RFC-0009/0010/0011 — `code.linenisgreat.com/clown`), not a wrapper
@@ -175,9 +193,13 @@ subprocess (applying `timeout` the same way as the sync path) and calls
 `ringmaster done --state succeeded|failed` on completion, which sends
 the wake. Session targeting needs no explicit parameter: `ringmaster
 start` resolves the session to wake from `CLOWN_SESSION_ID`, inherited
-from the clown stdio-bridge that spawned this process. If the
-`ringmaster` binary can't be found at all, `async: true` fails clearly
-(`isError`) rather than silently falling back to sync.
+from the clown stdio-bridge that spawned this process. `async: true`
+either creates the job or fails clearly (`isError`), never silently
+falls back to sync or blocks: a `ringmaster` binary that can't be found
+is an error, and so is a `ringmaster start`/`spool-path` call that
+doesn't return within 10s (it is killed and reported — just-us#34; a
+hung local journal write must not wedge the serial server). The `done`
+call on completion is bounded the same way.
 
 The `ringmaster` binary itself is a build-time pin, not a PATH lookup: a
 nix-built `just` embeds clown's `ringmaster` package's exact store path
@@ -185,7 +207,10 @@ nix-built `just` embeds clown's `ringmaster` package's exact store path
 by `build.rs` via `option_env!`) — confirmed by Nix's own reference
 scanner picking it up into `just`'s runtime closure automatically. A
 plain `cargo build` (no `RINGMASTER_BIN` set) falls back to a PATH
-lookup, so the dev-loop doesn't need the `clown` flake input.
+lookup, so the dev-loop doesn't need the `clown` flake input. A
+non-empty `JUST_US_RINGMASTER_BIN` in the runtime environment overrides
+both — a test hook (the hung-`ringmaster start` regression test stands
+in a stub that never returns), not something a deployment should set.
 
 ## Examples
 
@@ -227,9 +252,21 @@ lookup, so the dev-loop doesn't need the `clown` flake input.
   behavior have real environmental dependencies (a real `flake.nix` +
   network, a live clown session) that don't fit the hermetic bats-in-nix-
   sandbox lane well; `zz-tests_bats/mcp_tools.bats` covers sync execution,
-  timeout, and the async dispatch call itself (job id returned promptly),
-  but not devshell-wrapping or a full async completion+wake round trip —
-  those were verified by manual smoke test instead.
+  timeout (including process-group teardown of backgrounded
+  descendants and bounded pipe draining past a lingering daemon —
+  just-us#34), the async dispatch call itself (job id returned
+  promptly; a hung `ringmaster start` reported as an error), and
+  cooperative cancel, but not devshell-wrapping or a full async
+  completion+wake round trip — those were verified by manual smoke test
+  instead.
+- The server handles requests serially (one stdin line at a time, no
+  per-request thread — `Justfile` holds `Rc`s and is not `Sync`). Every
+  handler is now bounded, so a slow sync `run_recipe` (no `timeout`)
+  still delays later calls only for as long as the recipe itself runs,
+  never past its exit; but a client-side cancel (TaskStop) cannot reach
+  the server, so a sync call without `timeout` on a genuinely
+  never-ending recipe still blocks the server until that recipe ends.
+  Pass `timeout` or use `async` for anything open-ended.
 - Still no Rust MCP SDK: `tools/list`/`tools/call` are hand-parsed
   JSON-RPC, same as FDR 0005's `prompts/*`. Revisit if/when FDR 0004's
   FUSE/editing facets need something richer.

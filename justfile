@@ -155,7 +155,7 @@ test-bats-tags *tags:
 [group: 'post-build']
 test-bats-local *targets='*.bats':
   JUST_BIN=$(realpath ./target/debug/just) \
-    BATS_TEST_TIMEOUT=10 \
+    BATS_TEST_TIMEOUT=20 \
     bats --jobs $(nproc) zz-tests_bats/{{targets}}
 
 # only run cargo tests matching `PATTERN`

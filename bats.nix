@@ -4,7 +4,7 @@
 # `lib.${system}.batsLane` — see amarbel-llc/nixpkgs#16 for why it
 # moved out of the nixpkgs overlay into bats) with project-specific
 # defaults: bats-libs on BATS_LIB_PATH, the just binary exported as
-# JUST_BIN, and a 10-second per-test timeout.
+# JUST_BIN, and a 20-second per-test timeout.
 #
 # Auto-discovers `# bats file_tags=...` directives in zz-tests_bats/
 # at flake-eval time and produces one `bats-${tag}` derivation per
@@ -16,7 +16,10 @@
   myBin, # the just binary derivation
   batsSrc,
   ringmaster, # clown's job-platform CLI; run_recipe's async mode shells out to it
-  batsTestTimeout ? "10",
+  # 20s, not 10: the run_recipe async ringmaster-hang regression test
+  # (just-us#34) has to outlast the server's own 10s bound on
+  # `ringmaster start` to observe the error it produces.
+  batsTestTimeout ? "20",
 }:
 let
   inherit (pkgs) lib;
