@@ -5,15 +5,29 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
 
-    # bats helper libraries + the `batsLane` builder. Used only for the
-    # `bats-*` flake outputs; the upstream-facing `packages.default`
-    # derivation stays on stock nixpkgs.
+    # igloo: the amarbel-llc nixpkgs fork. Declared here only so `bats`
+    # can follow it (below) instead of resolving a second, independent
+    # copy — the fleet-wide pattern, and what keeps this repo's bats
+    # closure shared with every other repo's rather than duplicated.
+    # `packages.default` deliberately does NOT build against it; the
+    # upstream-facing derivation stays on stock `nixpkgs`.
+    igloo.url = "https://code.linenisgreat.com/igloo/archive/master.tar.gz";
+
+    # bats helper libraries + the `batsLane` builder (see bats-lane(7)).
+    # Used only for the `bats-*` flake outputs.
     #
-    # Don't override bats.inputs.nixpkgs to follow our `nixpkgs`: the
-    # bats flake expects an amarbel-llc/nixpkgs-shaped tree (it reads
-    # `nixpkgs.overlays.default` internally). Stock NixOS/nixpkgs
-    # doesn't expose that, so we let bats bring its own pin.
-    bats.url = "github:amarbel-llc/bats";
+    # Canonical host, not the GitHub mirror — same rule as `clown` below.
+    #
+    # `igloo` is what bats names its nixpkgs-fork input, and following it
+    # is safe: bats needs a fork-shaped tree (it reads
+    # `overlays.default`), which is exactly what igloo is, so this pins
+    # the same shape bats would otherwise fetch for itself. What must
+    # still NOT happen is pointing that input at our stock `nixpkgs`,
+    # which exposes no such overlay.
+    bats = {
+      url = "https://code.linenisgreat.com/bats/archive/master.tar.gz";
+      inputs.igloo.follows = "igloo";
+    };
 
     # conformist (formatter/linter multiplexer) supplies `nix fmt`, the
     # read-only `checks.formatting` gate, and the eng conformance

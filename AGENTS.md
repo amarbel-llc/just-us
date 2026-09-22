@@ -130,6 +130,31 @@ linters (agents-md, justfile-default, justfile-orphan-summary).
   behavior is proven by `nix/justfile-linter-fixtures.nix` (33 fixtures,
   wired into `checks` + `just test-linter-fixtures`), not the dogfood.
 
+## Flake inputs: the host note
+
+Fleet inputs come from `code.linenisgreat.com`, as anonymous HTTPS
+archive tarballs (`https://code.linenisgreat.com/<repo>/archive/master.tar.gz`),
+never a GitHub mirror and never `git+ssh` — the tarball form is what
+lets a downstream consumer relock without SSH and an agent. `clown`,
+`bats` and `igloo` follow it.
+
+`igloo` (the amarbel-llc nixpkgs fork) is declared only so `bats` can
+`follows` it rather than resolving its own copy, which is what keeps
+this repo's bats closure shared with the rest of the fleet. `bats`
+needs a fork-shaped tree — it reads `overlays.default` — so that input
+must never be pointed at our stock `nixpkgs`, which exposes no such
+overlay. `packages.default` is deliberately unaffected: the
+upstream-facing derivation stays on stock `nixpkgs`.
+
+Two known exceptions, both deliberate:
+
+- `nixpkgs` is upstream `NixOS/nixpkgs`, not the fork — `packages.default`
+  is meant to build for upstream consumers on a stock tree.
+- `conformist` is still `github:amarbel-llc/conformist`. That is a
+  leftover, not a decision: it puts a second conformist in `flake.lock`
+  beside the canonical-host one that arrives under `bats`. Nothing
+  tracks it yet; migrate it when next touching that input.
+
 ## Upstream resyncs
 
 Upstream is merged in periodically (`git pull` from casey/just
