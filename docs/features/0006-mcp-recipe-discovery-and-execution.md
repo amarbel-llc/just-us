@@ -178,6 +178,25 @@ when the grace runs out is flagged with a `note:` text block (later
 output is dropped); the recipe's own exit status is still what decides
 `isError`.
 
+**A recipe never gets the server's stdin.** Every child spawned by either
+path is given `Stdio::null()` for stdin, explicitly. `Command` inherits
+any descriptor left unset, and stdin here is the JSON-RPC channel, so the
+default handed each recipe a dup of it — the *same open file
+description*, not merely a second descriptor onto it. That had two
+consequences, and the second was just-us#36: a recipe reading stdin (`…
+| cat`) consumed the requests queued behind its own tool call, and
+anything in the recipe's process tree setting `O_NONBLOCK` on that shared
+description — `ssh` is the classic offender on inherited stdio — made the
+flag visible to the server's very next read, which failed with `EAGAIN`
+and killed the server for the rest of the session. Independently of that
+isolation, `EAGAIN`/`EINTR` on the server's own stdin reads and stdout
+writes are now retried (clearing `O_NONBLOCK` via `fcntl` first) rather
+than treated as fatal, since the flag can also arrive from outside this
+process entirely. Requests are read as bytes and validated as UTF-8 once
+the line is complete: a retry that resumes inside a multi-byte character
+must not lose the bytes already read, which `read_line`'s `String` guard
+silently does.
+
 **`async: true`** makes `run_recipe` a real **ringmaster job producer**
 (RFC-0009/0010/0011 — `code.linenisgreat.com/clown`), not a wrapper
 around moxy's `async` (just-us is clown-native and has no access to

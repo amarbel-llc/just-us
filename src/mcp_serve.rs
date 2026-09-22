@@ -25,7 +25,13 @@ use {
 // trait's methods (`process_group`) for method-call resolution without
 // binding a name at all, so both traits' methods stay reachable.
 #[cfg(unix)]
-use {nix::unistd::Pid, std::os::unix::process::CommandExt as _};
+use {
+  nix::{
+    fcntl::{FcntlArg, OFlag},
+    unistd::Pid,
+  },
+  std::os::{fd::AsFd, unix::process::CommandExt as _},
+};
 
 /// The clown plugin protocol's fixed prompt name for dynamic
 /// system-prompt contribution (RFC 0002 §5, docs/features/0005). MUST
@@ -49,17 +55,35 @@ pub(crate) fn run(
   let roster = roster(&compilation.justfile);
 
   let stdin = io::stdin();
+  let mut reader = stdin.lock();
   let mut stdout = io::stdout();
+  let mut line = Vec::new();
 
-  for line in stdin.lock().lines() {
-    let line = line.map_err(|io_error| Error::McpIo { io_error })?;
-    let line = line.trim();
+  loop {
+    line.clear();
 
+    read_request_line(&mut reader, &mut line).map_err(|io_error| Error::McpIo { io_error })?;
+
+    // The one place the loop ends: `read_request_line` only returns with
+    // `line` still empty at end of input.
     if line.is_empty() {
+      break;
+    }
+
+    // A request that isn't UTF-8 at all is malformed, and is skipped
+    // exactly like one that isn't JSON — never fatal. (`read_line` would
+    // have made it an `InvalidData` error and killed the server.)
+    let Ok(text) = str::from_utf8(&line) else {
+      continue;
+    };
+
+    let trimmed = text.trim();
+
+    if trimmed.is_empty() {
       continue;
     }
 
-    let Ok(request) = serde_json::from_str::<serde_json::Value>(line) else {
+    let Ok(request) = serde_json::from_str::<serde_json::Value>(trimmed) else {
       continue;
     };
 
@@ -78,13 +102,147 @@ pub(crate) fn run(
       _ => error(id, -32601, "method not found"),
     };
 
-    writeln!(stdout, "{response}").map_err(|io_error| Error::McpIo { io_error })?;
-    stdout
-      .flush()
-      .map_err(|io_error| Error::McpIo { io_error })?;
+    write_response(&mut stdout, &response).map_err(|io_error| Error::McpIo { io_error })?;
   }
 
   Ok(())
+}
+
+/// How long to wait before retrying a stdio operation that reported
+/// `EAGAIN` when the descriptor could not be put back into blocking
+/// mode. With the flag cleared the retry blocks properly and this never
+/// comes into play; it exists only so a descriptor that stays
+/// non-blocking degrades into a slow poll rather than a spin at 100% CPU.
+const NONBLOCKING_RETRY_BACKOFF: Duration = Duration::from_millis(10);
+
+/// Drop `O_NONBLOCK` from `fd`'s open file description, reporting whether
+/// it is now known to be blocking.
+#[cfg(unix)]
+fn clear_nonblocking<F: AsFd>(fd: &F) -> bool {
+  let Ok(flags) = nix::fcntl::fcntl(fd, FcntlArg::F_GETFL) else {
+    return false;
+  };
+
+  nix::fcntl::fcntl(
+    fd,
+    FcntlArg::F_SETFL(OFlag::from_bits_retain(flags) & !OFlag::O_NONBLOCK),
+  )
+  .is_ok()
+}
+
+/// Whether `io_error`, raised by a read or write on this server's own
+/// stdio descriptor `fd`, is transient — so the operation should be
+/// retried rather than taken as fatal (just-us#36).
+///
+/// `Interrupted` (`EINTR`) is the ordinary "a signal landed mid-syscall"
+/// case. The one that actually killed the server in the field is
+/// `WouldBlock` (`EAGAIN`): `O_NONBLOCK` is a property of the open file
+/// *description*, not of the descriptor, so any process holding a dup of
+/// our stdin can set it and make our own next read fail. Until this fix
+/// every recipe subprocess `run_recipe` spawned inherited that
+/// descriptor, and `ssh` — which recipes routinely shell out to — is a
+/// well-known setter of the flag on inherited stdio. Recipes no longer
+/// get our stdin at all (see `run_captured`/`run_recipe_async`), but the
+/// flag can still arrive from outside this process entirely, so clear it
+/// and carry on: one `EAGAIN` must never be able to take the server down
+/// for the rest of a session.
+#[cfg(unix)]
+fn recover_stdio_error<F: AsFd>(io_error: &io::Error, fd: &F) -> bool {
+  match io_error.kind() {
+    io::ErrorKind::Interrupted => true,
+    io::ErrorKind::WouldBlock => {
+      if !clear_nonblocking(fd) {
+        thread::sleep(NONBLOCKING_RETRY_BACKOFF);
+      }
+
+      true
+    }
+    _ => false,
+  }
+}
+
+/// `O_NONBLOCK` is a POSIX open-file-description flag with no Windows
+/// analogue, so there is nothing to clear and a `WouldBlock` can only be
+/// waited out; retrying is still strictly better than exiting.
+#[cfg(not(unix))]
+fn recover_stdio_error<F>(io_error: &io::Error, _fd: &F) -> bool {
+  match io_error.kind() {
+    io::ErrorKind::Interrupted => true,
+    io::ErrorKind::WouldBlock => {
+      thread::sleep(NONBLOCKING_RETRY_BACKOFF);
+      true
+    }
+    _ => false,
+  }
+}
+
+/// Read one newline-terminated request into `line`, retrying through
+/// transient stdio errors (`recover_stdio_error`). Returns with `line`
+/// still empty only at end of input — that, not an error, is how the
+/// request loop terminates.
+///
+/// Bytes, not a `String`, specifically so a retry can resume mid-line.
+/// `BufRead::read_line` runs its append through `io::append_to_string`,
+/// whose `Drop` guard only commits the appended bytes when *that call's*
+/// slice is itself valid UTF-8. An `EAGAIN` landing in the middle of a
+/// multi-byte character therefore rolls the partial read back and
+/// silently discards it, and the resumed read reassembles the request
+/// with a hole in it — which parses as malformed JSON and gets dropped,
+/// leaving the caller waiting forever for a reply that never comes.
+/// `read_until` has no such guard: whatever it appended before the error
+/// stays put, so resuming genuinely continues the request. UTF-8 is
+/// validated once, by the caller, on the assembled line.
+fn read_request_line(reader: &mut io::StdinLock<'static>, line: &mut Vec<u8>) -> io::Result<()> {
+  loop {
+    match reader.read_until(b'\n', line) {
+      // End of input: with `line` empty the caller stops; with a final
+      // unterminated request in it, that request is answered and the
+      // next call stops.
+      Ok(0) => return Ok(()),
+      Ok(_) if line.last() == Some(&b'\n') => return Ok(()),
+      // A short read with no newline means EOF was reached mid-line; go
+      // round once more to observe it as `Ok(0)`.
+      Ok(_) => {}
+      Err(io_error) => {
+        if !recover_stdio_error(&io_error, &*reader) {
+          return Err(io_error);
+        }
+      }
+    }
+  }
+}
+
+/// Write one JSON-RPC response line and flush it, retrying through
+/// transient stdio errors the same way `read_request_line` does. Tracks
+/// its own offset into the serialized line rather than going through
+/// `write!`, whose `write_all` cannot report how much of a partial write
+/// landed before the error and so is not safe to retry.
+fn write_response(stdout: &mut io::Stdout, response: &serde_json::Value) -> io::Result<()> {
+  let line = format!("{response}\n");
+  let mut remaining = line.as_bytes();
+
+  while !remaining.is_empty() {
+    match stdout.write(remaining) {
+      Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+      Ok(written) => remaining = &remaining[written..],
+      Err(io_error) => {
+        if !recover_stdio_error(&io_error, &*stdout) {
+          return Err(io_error);
+        }
+      }
+    }
+  }
+
+  loop {
+    match stdout.flush() {
+      Ok(()) => return Ok(()),
+      Err(io_error) => {
+        if !recover_stdio_error(&io_error, &*stdout) {
+          return Err(io_error);
+        }
+      }
+    }
+  }
 }
 
 /// Every public recipe (`ModelRecipe::private == false`), across the root
@@ -885,7 +1043,19 @@ fn collect_until(receiver: &mpsc::Receiver<Vec<u8>>, deadline: Instant) -> (Vec<
 /// pipes are drained for at most `PIPE_DRAIN_GRACE`, never "until EOF".
 /// `Err` is a spawn failure. Backs both `run_recipe`'s sync path and the
 /// async path's `ringmaster` CLI calls.
+///
+/// Isolated stdio: every descriptor the child gets is one this function
+/// created, never one of ours. `Command` defaults an unset descriptor to
+/// `Stdio::inherit()`, so leaving stdin unset handed the recipe a dup of
+/// the MCP server's own stdin — a *shared* open file description, not
+/// merely a second descriptor onto it. Anything in the recipe's process
+/// tree that set `O_NONBLOCK` on it (`ssh` is the classic offender) made
+/// the flag visible to the server's very next read, which then failed
+/// with `EAGAIN` and killed the server for the rest of the session
+/// (just-us#36). A recipe reading stdin would also have eaten the
+/// JSON-RPC requests queued behind its own tool call.
 fn run_captured(mut command: Command, timeout: Option<Duration>) -> io::Result<Captured> {
+  command.stdin(Stdio::null());
   command.stdout(Stdio::piped());
   command.stderr(Stdio::piped());
 
@@ -1021,6 +1191,10 @@ fn spawn_cancel_observer(job_id: String, pid: u32, cancelled: Arc<AtomicBool>) {
   thread::spawn(move || {
     let Ok(output) = ringmaster_command()
       .args(["wait", &job_id, "--on-cancel", "--json", "--timeout", "0"])
+      // `output()` already defaults stdin to null; stated outright so
+      // "no child spawned here ever gets the server's stdin"
+      // (just-us#36) is checkable at every spawn site in this module.
+      .stdin(Stdio::null())
       .output()
     else {
       return;
@@ -1105,6 +1279,11 @@ fn run_recipe_async(
     // which `spawn_cancel_observer` reconstructs from `child.id()`.
     #[cfg(unix)]
     command.process_group(0);
+
+    // Never our own stdin (just-us#36) -- see `isolated stdio` on
+    // `run_captured`. A recipe has no interactive input here anyway;
+    // stdin is the MCP transport and belongs to the request loop alone.
+    command.stdin(Stdio::null());
 
     let spool_file = spool_path.as_ref().and_then(|path| File::create(path).ok());
 

@@ -93,6 +93,8 @@ mod line_prefixes;
 mod list;
 mod logical_operators;
 mod man;
+#[cfg(unix)]
+mod mcp_stdio;
 mod misc;
 mod model;
 mod modules;

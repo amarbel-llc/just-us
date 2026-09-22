@@ -156,6 +156,11 @@ side unless upstream changed something load-bearing:
   (module declaration + re-export), `src/dump_format.rs` (the `Model`
   variant), and `src/subcommand.rs` (the dump match arm) each carry a
   small fork insertion that can conflict on upstream churn)
+- `tests/lib.rs` (the integration suite's module list — upstream adds
+  and removes `mod` lines constantly, and the fork inserts its own:
+  `mod model;` and `#[cfg(unix)] mod mcp_stdio;`. The modules
+  themselves, `tests/model.rs` and `tests/mcp_stdio.rs`, are fork-only
+  new files and don't conflict; only the two `mod` lines do)
 
 ## CI / workflows
 

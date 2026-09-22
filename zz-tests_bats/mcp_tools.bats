@@ -283,6 +283,41 @@ EOF
   [[ $output != *'"isError"'* ]] || fail "successful run_recipe should not set isError: $output"
 }
 
+@test "--mcp: run_recipe does not hand the recipe the server's own stdin (just-us#36)" {
+  # `Command` inherits any descriptor left unset, so a spawned recipe
+  # used to get a dup of the MCP server's own stdin -- the *same* open
+  # file description, not just a second descriptor onto it. Two
+  # consequences, one visible here and one not: a recipe reading stdin
+  # ate the JSON-RPC requests queued behind its own tool call, and
+  # anything in the recipe's process tree that set O_NONBLOCK on that
+  # shared description (ssh being the classic offender) made the
+  # server's very next read fail with EAGAIN and kill it outright. This
+  # covers the first; tests/mcp_stdio.rs covers surviving the second.
+  cat > justfile <<'EOF'
+swallow:
+    @cat
+EOF
+
+  # A real pipe, with the second request delayed until well after the
+  # first is answered, so it is genuinely still unread on the wire while
+  # `swallow` runs -- rather than already sitting in the server's own
+  # read buffer, where an inherited stdin could not have reached it and
+  # the bug would not reproduce. `cat` reads whatever fd 0 it is given:
+  # /dev/null returns at once, the server's stdin swallows request 2.
+  run --separate-stderr timeout --preserve-status 10s bash -c \
+    '(printf "%s\n" "$1"; sleep 2; printf "%s\n" "$2") | "$0" --mcp' "${JUST_BIN:-just}" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_recipe","arguments":{"recipe":"swallow"}}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+  assert_success
+
+  first_reply=$(echo "$output" | sed -n '1p')
+  second_reply=$(echo "$output" | sed -n '2p')
+
+  [[ $first_reply == *'"id":1'* ]] || fail "no reply to the run_recipe call: $first_reply"
+  [[ $first_reply != *'tools/list'* ]] || fail "the recipe read the server's own stdin and swallowed the next request: $first_reply"
+  [[ $second_reply == *'"id":2'* ]] || fail "server never answered the request issued while the recipe was running: $second_reply"
+}
+
 @test "--mcp: run_recipe reports a failing recipe as isError without crashing the server" {
   cat > justfile <<'EOF'
 fail:
