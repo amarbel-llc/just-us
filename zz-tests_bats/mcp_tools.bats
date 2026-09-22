@@ -269,6 +269,74 @@ EOF
   [[ $output != *'"isError"'* ]] || fail "resolving a real child recipe should not be an error: $output"
 }
 
+@test "--mcp: list_recipes/show_recipe reflect a root justfile edited mid-session (just-us#38)" {
+  # `--mcp` is a long-lived process (one per agent session); list_recipes/
+  # show_recipe must recompile the ROOT justfile on every call, the same
+  # way they already recompile every CHILD justfile fresh (see the
+  # "wraps a child justfile" tests above) and the same way run_recipe
+  # always re-invokes `just` as a real subprocess. A single-invocation
+  # `run ... <<<` test can't exercise this at all -- it restarts the
+  # process every call, which trivially "fixes" the bug by construction
+  # -- so this needs a backgrounded server (the same FIFO pattern as the
+  # async-cancel test below) that answers one request, sees the justfile
+  # edited out from under it, then answers more.
+  cat > justfile <<'EOF'
+# old doc
+build:
+    @echo build
+EOF
+
+  mkfifo mcp.in
+  "${JUST_BIN:-just}" --mcp <mcp.in >mcp.out 2>mcp.err &
+  mcp_pid=$!
+  exec 6>mcp.in
+
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"show_recipe","arguments":{"recipe":"build"}}}' >&6
+
+  for _ in $(seq 1 50); do
+    [[ $(wc -l <mcp.out) -ge 1 ]] && break
+    sleep 0.1
+  done
+
+  # Edit the root justfile AFTER the server already started and answered
+  # one request: a changed doc on the existing recipe, and a brand new
+  # recipe that did not exist when the process started.
+  cat > justfile <<'EOF'
+# new doc
+build:
+    @echo build
+
+# a brand new recipe
+new-thing:
+    @echo new
+EOF
+
+  printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"show_recipe","arguments":{"recipe":"build"}}}' >&6
+  printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"show_recipe","arguments":{"recipe":"new-thing"}}}' >&6
+  printf '%s\n' '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_recipes"}}' >&6
+
+  for _ in $(seq 1 50); do
+    [[ $(wc -l <mcp.out) -ge 4 ]] && break
+    sleep 0.1
+  done
+
+  exec 6>&-
+  kill "$mcp_pid" 2>/dev/null || true
+  wait "$mcp_pid" 2>/dev/null || true
+
+  build_after=$(sed -n '2p' mcp.out)
+  new_thing=$(sed -n '3p' mcp.out)
+  list_after=$(sed -n '4p' mcp.out)
+
+  [[ $build_after == *'new doc'* ]] || fail "show_recipe(build) still returned the stale pre-edit doc: $build_after"
+  [[ $build_after != *'old doc'* ]] || fail "show_recipe(build) leaked the stale pre-edit doc: $build_after"
+
+  [[ $new_thing == *'\"namepath\":\"new-thing\"'* ]] || fail "show_recipe did not see a recipe added mid-session: $new_thing"
+  [[ $new_thing != *'"isError"'* ]] || fail "a recipe added mid-session should resolve, not error: $new_thing"
+
+  [[ $list_after == *'new-thing'* ]] || fail "list_recipes did not see a recipe added mid-session: $list_after"
+}
+
 @test "--mcp: run_recipe captures stdout and reports success" {
   cat > justfile <<'EOF'
 greet name:

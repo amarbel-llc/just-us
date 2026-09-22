@@ -47,13 +47,17 @@ const SYSTEM_PROMPT_NAME: &str = "system-prompt-append";
 /// what came before it. JSON-RPC notifications (no `id`) are read and
 /// silently dropped: this server has no method that produces a side
 /// effect worth acting on without a reply.
-pub(crate) fn run(
-  config: &Config,
-  search: &Search,
-  compilation: Compilation,
-) -> RunResult<'static> {
-  let roster = roster(&compilation.justfile);
-
+///
+/// No `Compilation` is held across requests (just-us#38): this process is
+/// long-lived (one `just --mcp` per agent session), so a `Compilation`
+/// captured once at startup and reused for every reply goes stale the
+/// instant the root justfile is edited mid-session, while `run_recipe`
+/// (a real subprocess re-invoking `just`) and `all_public_recipes`'s own
+/// per-child-justfile compiles never had this problem — the asymmetry
+/// that made the bug hard to spot. `prompts_get` and `tools_call`
+/// recompile the root justfile fresh, matching that same per-child
+/// freshness.
+pub(crate) fn run(config: &Config, search: &Search) -> RunResult<'static> {
   let stdin = io::stdin();
   let mut reader = stdin.lock();
   let mut stdout = io::stdout();
@@ -96,9 +100,9 @@ pub(crate) fn run(
     let response = match method {
       Some("initialize") => ok(id, initialize_result()),
       Some("prompts/list") => ok(id, prompts_list_result()),
-      Some("prompts/get") => prompts_get(id, &request, &roster),
+      Some("prompts/get") => prompts_get(id, &request, config, search),
       Some("tools/list") => ok(id, tools_list_result()),
-      Some("tools/call") => tools_call(id, &request, config, search, &compilation),
+      Some("tools/call") => tools_call(id, &request, config, search),
       _ => error(id, -32601, "method not found"),
     };
 
@@ -243,6 +247,19 @@ fn write_response(stdout: &mut io::Stdout, response: &serde_json::Value) -> io::
       }
     }
   }
+}
+
+/// Recompile the root justfile fresh for THIS request (just-us#38).
+/// Callers create a fresh `Loader::new()` at their own call site (matching
+/// `all_public_recipes`'s existing per-child-justfile pattern) so the
+/// returned `Compilation`'s lifetime ties to a loader the caller keeps
+/// alive for exactly as long as it uses the result.
+fn compile_root<'src>(
+  config: &Config,
+  search: &Search,
+  loader: &'src Loader,
+) -> RunResult<'src, Compilation<'src>> {
+  Compiler::compile(config, loader, &search.justfile)
 }
 
 /// Every public recipe (`ModelRecipe::private == false`), across the root
@@ -440,7 +457,8 @@ fn prompts_list_result() -> serde_json::Value {
 fn prompts_get(
   id: serde_json::Value,
   request: &serde_json::Value,
-  roster: &str,
+  config: &Config,
+  search: &Search,
 ) -> serde_json::Value {
   let name = request
     .get("params")
@@ -451,13 +469,25 @@ fn prompts_get(
     return error(id, -32602, "unknown prompt name");
   }
 
+  let loader = Loader::new();
+  let compilation = match compile_root(config, search, &loader) {
+    Ok(compilation) => compilation,
+    Err(compile_error) => {
+      return error(
+        id,
+        -32000,
+        &compile_error.color_display(Color::never()).to_string(),
+      );
+    }
+  };
+
   ok(
     id,
     serde_json::json!({
       "description": "Public recipe roster (name + doc line) for this justfile.",
       "messages": [{
         "role": "user",
-        "content": { "type": "text", "text": roster },
+        "content": { "type": "text", "text": roster(&compilation.justfile) },
       }],
     }),
   )
@@ -546,12 +576,19 @@ fn tools_list_result() -> serde_json::Value {
   })
 }
 
+/// Fetches a `compile_root` failure into the `tools/call` error shape
+/// (an `isError: true` tool result, not a JSON-RPC protocol error) — the
+/// convention every other `tools_call` failure in this file already uses
+/// (e.g. `show_recipe`'s "unknown recipe", `run_recipe`'s failure text).
+fn tool_compile_error(compile_error: Error) -> serde_json::Value {
+  tool_error_text(compile_error.color_display(Color::never()).to_string())
+}
+
 fn tools_call(
   id: serde_json::Value,
   request: &serde_json::Value,
   config: &Config,
   search: &Search,
-  compilation: &Compilation,
 ) -> serde_json::Value {
   let Some(params) = request.get("params") else {
     return error(id, -32602, "missing params");
@@ -565,6 +602,12 @@ fn tools_call(
 
   match name {
     "list_recipes" => {
+      let loader = Loader::new();
+      let compilation = match compile_root(config, search, &loader) {
+        Ok(compilation) => compilation,
+        Err(compile_error) => return ok(id, tool_compile_error(compile_error)),
+      };
+
       let verbose = arguments
         .get("verbose")
         .and_then(serde_json::Value::as_bool)
@@ -588,6 +631,12 @@ fn tools_call(
     "show_recipe" => {
       let Some(recipe) = arguments.get("recipe").and_then(serde_json::Value::as_str) else {
         return error(id, -32602, "missing \"recipe\" argument");
+      };
+
+      let loader = Loader::new();
+      let compilation = match compile_root(config, search, &loader) {
+        Ok(compilation) => compilation,
+        Err(compile_error) => return ok(id, tool_compile_error(compile_error)),
       };
 
       let recipes = all_public_recipes(
@@ -660,13 +709,25 @@ fn tools_call(
         },
       )
     }
-    "dump_justfile" => ok(
-      id,
-      tool_result_json(
-        serde_json::to_value(&compilation.justfile).unwrap_or(serde_json::Value::Null),
-      ),
-    ),
+    "dump_justfile" => {
+      let loader = Loader::new();
+      match compile_root(config, search, &loader) {
+        Ok(compilation) => ok(
+          id,
+          tool_result_json(
+            serde_json::to_value(&compilation.justfile).unwrap_or(serde_json::Value::Null),
+          ),
+        ),
+        Err(compile_error) => ok(id, tool_compile_error(compile_error)),
+      }
+    }
     "list_variables" => {
+      let loader = Loader::new();
+      let compilation = match compile_root(config, search, &loader) {
+        Ok(compilation) => compilation,
+        Err(compile_error) => return ok(id, tool_compile_error(compile_error)),
+      };
+
       match compilation
         .justfile
         .evaluate_all(config, search, &compilation.overrides)

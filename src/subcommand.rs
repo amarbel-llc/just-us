@@ -123,7 +123,7 @@ impl Subcommand {
       Dump { format } => Self::dump(config, compilation, *format)?,
       Groups => Self::groups(config, justfile),
       List { path } => Self::list(config, justfile, path)?,
-      Mcp => Self::mcp(config, &search, compilation)?,
+      Mcp => Self::mcp(config, &search)?,
       Run { arguments } => Self::run(config, &events, loader, search, compilation, arguments)?,
       Show { path } => Self::show(config, justfile, path)?,
       Summary => Self::summary(config, justfile),
@@ -349,8 +349,15 @@ impl Subcommand {
     Ok(())
   }
 
-  fn mcp(config: &Config, search: &Search, compilation: Compilation) -> RunResult<'static> {
-    mcp_serve::run(config, search, compilation)
+  // No `compilation` parameter (just-us#38): the MCP server recompiles the
+  // root justfile fresh per request instead of reusing one captured at
+  // startup, which went stale the instant an agent edited the root
+  // justfile mid-session. The caller's own upfront `Self::compile` (below)
+  // still runs unconditionally before this is reached, so a justfile that
+  // fails to compile at all is still caught immediately at startup -- its
+  // result is simply unused for this one subcommand.
+  fn mcp(config: &Config, search: &Search) -> RunResult<'static> {
+    mcp_serve::run(config, search)
   }
 
   fn edit(search: &Search) -> RunResult<'static> {

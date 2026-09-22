@@ -148,12 +148,15 @@ original ergonomic gap this design closes (a `dir/recipe` invocation was
 silently wrapped in the *caller's* devshell rather than the recipe's
 own, or the directory's nearest available one).
 
-`dump_justfile`/`list_variables` are unaffected — they still read the
-already-compiled in-process `Compilation`. `list_recipes`/`show_recipe`
-also read that in-process `Compilation` for the root justfile, but
-additionally compile any *discovered child* justfiles independently
-(see below); `run_recipe`'s own execution is the only thing that moved
-to subprocess spawning.
+`dump_justfile`/`list_variables`/`list_recipes`/`show_recipe` all
+recompile the root justfile fresh on every call (just-us#38) — no
+`Compilation` is held across requests, since `--mcp` is a long-lived
+process and a `Compilation` captured once at startup went stale the
+instant an agent edited the root justfile mid-session, while
+`run_recipe` (a real subprocess re-invoking `just`) and the
+discovered-child-justfile compiles below never had that problem.
+`list_recipes`/`show_recipe` additionally compile any *discovered
+child* justfiles independently (see below).
 
 **`timeout`** (e.g. `"25m"`, `"90s"`, `"2h"` — single-unit only, no
 compound forms like `"1h30m"` in this slice) polls the child and, on
@@ -293,9 +296,11 @@ in a stub that never returns), not something a deployment should set.
   `run_recipe`) may not scale cleanly as more modifiers accumulate —
   tracked as a followup to explore a more structured shape
   (`forge.starbrandshoes.com/linenisgreat/just-us#28`).
-- No caching: `list_recipes`/`show_recipe` recompile every discovered
-  child justfile on every call. Fine at the scale this was verified
-  against (a few hundred recipes across a handful of child justfiles);
+- No caching: every tool that reads justfile data recompiles the root
+  (just-us#38) and `list_recipes`/`show_recipe` recompile every
+  discovered child justfile on every call. Fine at the scale this was
+  verified against (a few hundred recipes across a handful of child
+  justfiles);
   revisit if a repo's child-justfile count makes this measurably slow.
 - Compact `list_recipes` reduces output size but doesn't bound it —
   a repo with enough recipes could still exceed the inline-result limit
