@@ -136,24 +136,24 @@ Fleet inputs come from `code.linenisgreat.com`, as anonymous HTTPS
 archive tarballs (`https://code.linenisgreat.com/<repo>/archive/master.tar.gz`),
 never a GitHub mirror and never `git+ssh` — the tarball form is what
 lets a downstream consumer relock without SSH and an agent. `clown`,
-`bats` and `igloo` follow it.
+`bats`, `conformist` and `igloo` all use it.
 
-`igloo` (the amarbel-llc nixpkgs fork) is declared only so `bats` can
-`follows` it rather than resolving its own copy, which is what keeps
-this repo's bats closure shared with the rest of the fleet. `bats`
-needs a fork-shaped tree — it reads `overlays.default` — so that input
-must never be pointed at our stock `nixpkgs`, which exposes no such
-overlay. `packages.default` is deliberately unaffected: the
-upstream-facing derivation stays on stock `nixpkgs`.
+`igloo` (the amarbel-llc nixpkgs fork) is declared only so `bats` and
+`conformist` can `follows` it rather than each resolving its own copy,
+which is what keeps this repo's closure shared with the rest of the
+fleet instead of carrying duplicates. Both need a fork-shaped tree —
+they read `overlays.default` — so that input must never be pointed at
+our stock `nixpkgs`, which exposes no such overlay.
 
-Two known exceptions, both deliberate:
+`bats` takes `conformist` too, for its own `nix fmt`/checks that this
+repo never evaluates, so `bats.inputs.conformist.follows = "conformist"`
+collapses what would otherwise be two independently-locked copies of
+the same repo.
 
-- `nixpkgs` is upstream `NixOS/nixpkgs`, not the fork — `packages.default`
-  is meant to build for upstream consumers on a stock tree.
-- `conformist` is still `github:amarbel-llc/conformist`. That is a
-  leftover, not a decision: it puts a second conformist in `flake.lock`
-  beside the canonical-host one that arrives under `bats`. Nothing
-  tracks it yet; migrate it when next touching that input.
+One deliberate exception: `nixpkgs` is upstream `NixOS/nixpkgs`, not
+the fork, because `packages.default` is meant to build for upstream
+consumers on a stock tree. That is also why none of the above touches
+it — the upstream-facing derivation stays on stock `nixpkgs`.
 
 ## Upstream resyncs
 

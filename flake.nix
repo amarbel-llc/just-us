@@ -27,13 +27,21 @@
     bats = {
       url = "https://code.linenisgreat.com/bats/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
+      # bats takes conformist for its own `nix fmt`/checks, which this
+      # repo never evaluates. Following ours collapses what would
+      # otherwise be two independently-locked copies of the same repo
+      # into one.
+      inputs.conformist.follows = "conformist";
     };
 
     # conformist (formatter/linter multiplexer) supplies `nix fmt`, the
     # read-only `checks.formatting` gate, and the eng conformance
     # linters. Tool binaries resolve from our `nixpkgs`; only the
     # conformist binary itself comes from the input's own pin.
-    conformist.url = "github:amarbel-llc/conformist";
+    conformist = {
+      url = "https://code.linenisgreat.com/conformist/archive/master.tar.gz";
+      inputs.igloo.follows = "igloo";
+    };
 
     # Supplies `ringmaster`, the job-platform CLI `run_recipe`'s async
     # mode shells out to (docs/features/0006 addendum: subprocess
