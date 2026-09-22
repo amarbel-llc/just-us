@@ -1,5 +1,21 @@
 use super::*;
 
+// eng-versioning(7) "Commit embedding (Rust)" / "version subcommand
+// output": `--version` prints `<name> <version>+<sha>`, not upstream's
+// bare `<name> <version>` (src/arguments.rs's `version = concat!(...)`;
+// the sha itself is flowed in by build.rs's JUST_US_GIT_SHA). The sha is
+// environment-dependent (git presence/dirtiness, or a nix-supplied
+// revision), so this only pins the shape, not an exact value.
+#[test]
+fn version_includes_git_sha_build_metadata() {
+  Test::new()
+    .no_justfile()
+    .test_round_trip(false)
+    .arg("--version")
+    .stdout_regex(r"just \d+\.\d+\.\d+\+\S+\n")
+    .success();
+}
+
 #[test]
 fn alias_listing() {
   Test::new()

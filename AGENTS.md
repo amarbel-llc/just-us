@@ -71,6 +71,13 @@ upstream's `1.x`), per eng-versioning(7):
   `Cargo.toml`, and `Cargo.lock` together.
 - Releases: `just release <new>` (bump, commit, signed `v*` tag,
   `gh release create`). Tags are annotated and signed.
+- `--version` prints `just <version>+<sha>` (eng-versioning(7) "Commit
+  embedding" / "version subcommand output"), not upstream's bare
+  `<version>`. `build.rs` flows `JUST_US_GIT_SHA` in: the nix build sets
+  it from the flake's own git revision (`self.shortRev or
+  self.dirtyShortRev or "unknown"`), a dev `cargo build` shells out to
+  `git` for a short sha (`-dirty` suffixed on a modified tree), and it
+  falls back to `"unknown"` outside a git checkout entirely.
 
 ## Justfile
 

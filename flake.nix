@@ -74,6 +74,14 @@
 
         package = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package;
 
+        # eng-versioning(7) "Commit embedding (Rust)": the flake's own git
+        # revision, flowed into build.rs's JUST_US_GIT_SHA (which the nix
+        # build sandbox has no `.git` of its own to derive) so `--version`
+        # can show `<version>+<sha>`. `dirtyShortRev` already carries the
+        # `-dirty` suffix on an unclean tree; `"unknown"` only applies to a
+        # non-git source (e.g. a fetched tarball with no revision at all).
+        gitSha = self.shortRev or self.dirtyShortRev or "unknown";
+
         # Build-time pin for `run_recipe`'s async (ringmaster job producer)
         # mode: embedded into the binary via build.rs + `option_env!` so a
         # nix-built `just` never depends on `ringmaster` being ambiently on
@@ -95,6 +103,7 @@
           };
 
           RINGMASTER_BIN = "${ringmaster}/bin/ringmaster";
+          JUST_US_GIT_SHA = gitSha;
 
           nativeBuildInputs = with pkgs; [
             installShellFiles
@@ -147,6 +156,8 @@
             lockFile = ./Cargo.lock;
           };
 
+          JUST_US_GIT_SHA = gitSha;
+
           doCheck = false;
         };
 
@@ -181,6 +192,7 @@
               src = ./.;
               auditable = false;
               cargoLock.lockFile = ./Cargo.lock;
+              JUST_US_GIT_SHA = gitSha;
               doCheck = false;
             };
 

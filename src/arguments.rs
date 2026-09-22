@@ -24,7 +24,13 @@ use {
     .usage(AnsiColor::Yellow.on_default() | Effects::BOLD)
     .valid(AnsiColor::Green.on_default()),
   trailing_var_arg = true,
-  version = env!("CARGO_PKG_VERSION"),
+  // eng-versioning(7) "version subcommand output": `<name> <version>+<sha>`.
+  // `JUST_US_GIT_SHA` is flowed in by build.rs (its own "Commit embedding
+  // (Rust)" section) -- the nix build sets it from the flake's own git
+  // revision, a dev `cargo build` shells out to `git` for a short sha
+  // (`-dirty` suffixed on a modified tree), and it falls back to
+  // "unknown" outside a git checkout entirely (e.g. a source tarball).
+  version = concat!(env!("CARGO_PKG_VERSION"), "+", env!("JUST_US_GIT_SHA")),
 )]
 pub struct Arguments {
   #[arg(
