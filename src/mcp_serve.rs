@@ -57,7 +57,17 @@ const SYSTEM_PROMPT_NAME: &str = "system-prompt-append";
 /// that made the bug hard to spot. `prompts_get` and `tools_call`
 /// recompile the root justfile fresh, matching that same per-child
 /// freshness.
-pub(crate) fn run(config: &Config, search: &Search) -> RunResult<'static> {
+///
+/// `search` is `None` when the caller (`Subcommand::mcp`) found no
+/// justfile anywhere in this cwd's ancestry (just-us#39): most tools
+/// below degrade to an empty/zero-recipe response, or a per-call
+/// "no justfile found" error, instead of refusing to start at all --
+/// `--mcp` is routinely launched from a justfile-less root (a bare
+/// workspace directory aggregating sibling checkouts, say). `run_recipe`
+/// is the exception: it falls back to the invocation directory and can
+/// still succeed for a `dir/recipe` positional, via the re-invoked
+/// `just` subprocess's own upward search.
+pub(crate) fn run(config: &Config, search: Option<&Search>) -> RunResult<'static> {
   let stdin = io::stdin();
   let mut reader = stdin.lock();
   let mut stdout = io::stdout();
@@ -458,7 +468,7 @@ fn prompts_get(
   id: serde_json::Value,
   request: &serde_json::Value,
   config: &Config,
-  search: &Search,
+  search: Option<&Search>,
 ) -> serde_json::Value {
   let name = request
     .get("params")
@@ -468,6 +478,22 @@ fn prompts_get(
   if name != Some(SYSTEM_PROMPT_NAME) {
     return error(id, -32602, "unknown prompt name");
   }
+
+  // No justfile anywhere in scope (just-us#39): nothing to roster, but
+  // that's not an error -- reply with an empty one rather than refusing
+  // to answer.
+  let Some(search) = search else {
+    return ok(
+      id,
+      serde_json::json!({
+        "description": "Public recipe roster (name + doc line) for this justfile.",
+        "messages": [{
+          "role": "user",
+          "content": { "type": "text", "text": "" },
+        }],
+      }),
+    );
+  };
 
   let loader = Loader::new();
   let compilation = match compile_root(config, search, &loader) {
@@ -588,7 +614,7 @@ fn tools_call(
   id: serde_json::Value,
   request: &serde_json::Value,
   config: &Config,
-  search: &Search,
+  search: Option<&Search>,
 ) -> serde_json::Value {
   let Some(params) = request.get("params") else {
     return error(id, -32602, "missing params");
@@ -602,6 +628,13 @@ fn tools_call(
 
   match name {
     "list_recipes" => {
+      // No justfile anywhere in scope (just-us#39): nothing to list,
+      // but that's not an error -- an empty roster rather than
+      // refusing to answer.
+      let Some(search) = search else {
+        return ok(id, tool_result_json(serde_json::Value::Array(Vec::new())));
+      };
+
       let loader = Loader::new();
       let compilation = match compile_root(config, search, &loader) {
         Ok(compilation) => compilation,
@@ -631,6 +664,12 @@ fn tools_call(
     "show_recipe" => {
       let Some(recipe) = arguments.get("recipe").and_then(serde_json::Value::as_str) else {
         return error(id, -32602, "missing \"recipe\" argument");
+      };
+
+      // No justfile anywhere in scope (just-us#39): there is nothing
+      // `recipe` could possibly resolve to.
+      let Some(search) = search else {
+        return ok(id, tool_error_text(SearchError::NotFound.to_string()));
       };
 
       let loader = Loader::new();
@@ -689,7 +728,18 @@ fn tools_call(
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
-      let run_dir = search.working_directory.clone();
+      // No root justfile in scope (just-us#39): fall back to the
+      // invocation directory. `just`'s own upward search, re-invoked as
+      // a subprocess by `recipe_command` from there, still finds any
+      // child justfile a `dir/recipe` positional points at -- only a
+      // bare recipe name with nothing in scope anywhere fails, and it
+      // fails the same "no justfile found" way any other justfile-less
+      // `just` invocation does, as a per-call tool error rather than a
+      // dead server.
+      let run_dir = search.map_or_else(
+        || config.invocation_directory.clone(),
+        |search| search.working_directory.clone(),
+      );
       let recipe_dir = flake_target_dir(&run_dir, recipe);
       let flake_dir = resolve_flake_dir(&recipe_dir, &run_dir);
 
@@ -710,6 +760,11 @@ fn tools_call(
       )
     }
     "dump_justfile" => {
+      // No justfile anywhere in scope (just-us#39): nothing to dump.
+      let Some(search) = search else {
+        return ok(id, tool_error_text(SearchError::NotFound.to_string()));
+      };
+
       let loader = Loader::new();
       match compile_root(config, search, &loader) {
         Ok(compilation) => ok(
@@ -722,6 +777,13 @@ fn tools_call(
       }
     }
     "list_variables" => {
+      // No justfile anywhere in scope (just-us#39): nothing to list,
+      // but that's not an error -- an empty list rather than refusing
+      // to answer, matching `list_recipes`.
+      let Some(search) = search else {
+        return ok(id, tool_result_json(serde_json::Value::Array(Vec::new())));
+      };
+
       let loader = Loader::new();
       let compilation = match compile_root(config, search, &loader) {
         Ok(compilation) => compilation,

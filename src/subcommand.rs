@@ -93,7 +93,19 @@ impl Subcommand {
       EventSink::noop()
     };
 
-    let search = Search::search(config)?;
+    let search = match Search::search(config) {
+      Ok(search) => search,
+      // `--mcp` is routinely launched from a justfile-less root -- a bare
+      // workspace directory aggregating sibling checkouts, say -- and
+      // must still come up and answer rather than exiting before the
+      // JSON-RPC handshake (and, wrapped by clown's stdio bridge, its
+      // healthz endpoint) ever gets a chance (just-us#39). Every other
+      // subcommand, and every other search failure for `--mcp` itself
+      // (multiple candidate justfiles, a filesystem error), still
+      // hard-fails exactly as before.
+      Err(SearchError::NotFound) if matches!(self, Mcp) => return Self::mcp(config, None),
+      Err(search_error) => return Err(search_error.into()),
+    };
 
     if matches!(self, Edit) {
       return Self::edit(&search);
@@ -123,7 +135,7 @@ impl Subcommand {
       Dump { format } => Self::dump(config, compilation, *format)?,
       Groups => Self::groups(config, justfile),
       List { path } => Self::list(config, justfile, path)?,
-      Mcp => Self::mcp(config, &search)?,
+      Mcp => Self::mcp(config, Some(&search))?,
       Run { arguments } => Self::run(config, &events, loader, search, compilation, arguments)?,
       Show { path } => Self::show(config, justfile, path)?,
       Summary => Self::summary(config, justfile),
@@ -352,11 +364,18 @@ impl Subcommand {
   // No `compilation` parameter (just-us#38): the MCP server recompiles the
   // root justfile fresh per request instead of reusing one captured at
   // startup, which went stale the instant an agent edited the root
-  // justfile mid-session. The caller's own upfront `Self::compile` (below)
-  // still runs unconditionally before this is reached, so a justfile that
-  // fails to compile at all is still caught immediately at startup -- its
-  // result is simply unused for this one subcommand.
-  fn mcp(config: &Config, search: &Search) -> RunResult<'static> {
+  // justfile mid-session. When `search` is `Some`, the caller's own
+  // upfront `Self::compile` (below) still runs unconditionally before this
+  // is reached, so a *present* justfile that fails to compile is still
+  // caught immediately at startup -- its result is simply unused for this
+  // one subcommand. `search` is `None` only when no justfile exists
+  // anywhere in this cwd's ancestry (just-us#39): most tools below
+  // degrade to an empty/zero-recipe response or a per-call "no justfile
+  // found" error instead of the whole server refusing to start --
+  // `run_recipe` is the exception, falling back to the invocation
+  // directory and letting a `dir/recipe` positional still resolve via
+  // the re-invoked `just` subprocess's own search.
+  fn mcp(config: &Config, search: Option<&Search>) -> RunResult<'static> {
     mcp_serve::run(config, search)
   }
 

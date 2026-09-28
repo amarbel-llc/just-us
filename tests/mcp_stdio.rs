@@ -262,3 +262,36 @@ fn eagain_inside_a_multibyte_character_does_not_corrupt_the_request() {
 
   server.expect_clean_exit();
 }
+
+/// just-us#39: `--mcp` launched from a directory with no justfile anywhere
+/// in its ancestry must still come up and answer, not exit 1 before the
+/// JSON-RPC handshake (and, wrapped by `clown-stdio-bridge`, its healthz
+/// endpoint) ever gets a chance. Clown sessions are routinely started from
+/// directories that aren't inside any justfile-having project -- a bare
+/// workspace root that only aggregates sibling repo checkouts, say.
+///
+/// Deliberately uses `tempdir()` directly rather than `fixture()`: no
+/// justfile is written into it, and -- like `fixture`'s own callers --
+/// nothing above it in the temp-directory hierarchy has one either.
+#[test]
+fn mcp_starts_and_answers_from_a_justfile_less_directory() {
+  let tmp = tempdir();
+  let mut server = Server::start(tmp.path());
+
+  server.tools_list(1);
+  server.expect_response(1, "tools/list from a justfile-less root");
+
+  server.send(
+    br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_recipes","arguments":{}}}"#,
+  );
+  server.send(b"\n");
+  server.expect_response(2, "list_recipes from a justfile-less root");
+
+  server.send(
+    br#"{"jsonrpc":"2.0","id":3,"method":"prompts/get","params":{"name":"system-prompt-append"}}"#,
+  );
+  server.send(b"\n");
+  server.expect_response(3, "prompts/get from a justfile-less root");
+
+  server.expect_clean_exit();
+}
