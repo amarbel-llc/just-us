@@ -2,15 +2,34 @@
   description = "Just a command runner";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Stable-First Nixpkgs Convention (eng AGENTS.md): `nixpkgs` tracks
+    # the stable release branch and is what runtimes/core tools build
+    # against. `packages.default` (the shipped `just` binary) builds
+    # from this `pkgs`, not `pkgs-master` — see the `just` derivation
+    # below for the decision this supersedes.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+
+    # `nixpkgs-master` half of the same convention: a SHA literal, not
+    # a branch ref, bumped only by the fleet-wide `circus cascade`
+    # (doppelgang's `nixpkgs-master` check + `nix flake update`), never
+    # by an ad hoc `nix flake update nixpkgs-master`. This is what lets
+    # just-us participate in the cascade instead of being excluded from
+    # it. Declared and bound to `pkgs-master` below for convention
+    # compliance; nothing in this flake consumes it today — see the
+    # `pkgs-master` binding's comment for why (clippy/rustfmt must
+    # track the same nixpkgs revision as the rustc they build against,
+    # which rules out the devShell's obvious use case).
+    nixpkgs-master.url = "github:NixOS/nixpkgs/7a0f122f5090cf4c2ade2a13a0e229d4e19ba71f";
+
     flake-utils.url = "github:numtide/flake-utils";
 
     # igloo: the amarbel-llc nixpkgs fork. Declared here only so `bats`
     # can follow it (below) instead of resolving a second, independent
     # copy — the fleet-wide pattern, and what keeps this repo's bats
     # closure shared with every other repo's rather than duplicated.
-    # `packages.default` deliberately does NOT build against it; the
-    # upstream-facing derivation stays on stock `nixpkgs`.
+    # `packages.default` doesn't need igloo's fork-shaped tree (it
+    # doesn't use any amarbel-llc overlay) or nixpkgs-master's
+    # faster-moving pin — see the Stable-First comment above.
     igloo.url = "https://code.linenisgreat.com/igloo/archive/master.tar.gz";
 
     # bats helper libraries + the `batsLane` builder (see bats-lane(7)).
@@ -61,6 +80,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-master,
       flake-utils,
       bats,
       ...
@@ -69,6 +89,14 @@
       system:
       let
         pkgs = import nixpkgs {
+          inherit system;
+        };
+
+        # See the `nixpkgs-master` input's comment: declared for fleet
+        # cascade participation, not consumed by any output yet. Kept
+        # as a real binding (not just the input) so a future master-only
+        # consumer is a one-line addition instead of a re-onboarding.
+        pkgs-master = import nixpkgs-master {
           inherit system;
         };
 
@@ -90,6 +118,15 @@
         # input.
         ringmaster = inputs.clown.packages.${system}.ringmaster;
 
+        # Builds from stable `pkgs` (nixos-25.11), not `pkgs-master`:
+        # `packages.default` is the fork's shipped runtime — exactly
+        # the "runtimes, core tools" case the Stable-First Nixpkgs
+        # Convention (eng AGENTS.md) puts on the stable branch, and
+        # what every other fleet repo's packages.default does. This
+        # supersedes the flake's old "stock nixos-unstable,
+        # upstream-facing" framing: the fork now tracks the fleet's
+        # nixpkgs pin like any other repo, not an upstream-facing
+        # unstable snapshot.
         just = pkgs.rustPlatform.buildRustPackage {
           pname = "just";
           version = package.version;
@@ -226,9 +263,11 @@
           # Formatters: rust + nix only — deliberately narrow so upstream
           # prose and config (README.md, Cargo.toml, ...) stay untouched
           # across resyncs. rustfmt's edition default (2024) matches
-          # rustfmt.toml.
+          # rustfmt.toml. `programs.nixfmt.enable` and the tree-wide
+          # excludes live in ./conformist.nix (imported below,
+          # conformist#conform's brownfield scaffold) rather than
+          # duplicated inline.
           programs.rustfmt.enable = true;
-          programs.nixfmt.enable = true;
 
           # Native read-only check so `checks.formatting` doesn't use the
           # sandbox-copy strategy, which loses rustfmt.toml and checks
@@ -263,7 +302,10 @@
           # `just`. This became possible once the conformist input was bumped past
           # its half of the transplant, which removed conformist's own copies of
           # the seven (they used to double-declare with these).
-          imports = [ ./nix/presets/justfile.nix ];
+          imports = [
+            ./nix/presets/justfile.nix
+            ./conformist.nix
+          ];
           linters.justfile-common.justPackage = just;
 
           # just-us is an upstream FORK: its justfile carries upstream heritage
@@ -347,27 +389,38 @@
         formatter = conformistEval.config.build.wrapper;
 
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            rustc
-            cargo
-            clippy
-            rustfmt
-            # The integration suite (choose::default, edit::editor_precedence)
-            # symlinks fake tool names onto `which cat` and runs them; that
-            # breaks when cat is a single-binary coreutils multicall that
-            # dispatches on argv[0]. Pin a separate-binaries coreutils first
-            # in PATH so the symlink trick works.
-            (coreutils.override { singleBinary = false; })
-            # cargo l* (lclippy/lrun/ltest) used by the lint/run recipes.
-            cargo-limit
-            # bin/forbid greps with rg.
-            ripgrep
-            # upstream's tests/backticks.rs configures `set shell :=
-            # ['python3', '-c']`, so the cargo test suite needs python3 on PATH;
-            # without it backticks::trailing_newlines_are_stripped fails with
-            # "could not find the shell". Not otherwise used by the fork.
-            python3
-          ];
+          packages =
+            with pkgs;
+            [
+              rustc
+              cargo
+              clippy
+              rustfmt
+              # The integration suite (choose::default, edit::editor_precedence)
+              # symlinks fake tool names onto `which cat` and runs them; that
+              # breaks when cat is a single-binary coreutils multicall that
+              # dispatches on argv[0]. Pin a separate-binaries coreutils first
+              # in PATH so the symlink trick works.
+              (coreutils.override { singleBinary = false; })
+              # cargo l* (lclippy/lrun/ltest) used by the lint/run recipes.
+              cargo-limit
+              # bin/forbid greps with rg.
+              ripgrep
+              # upstream's tests/backticks.rs configures `set shell :=
+              # ['python3', '-c']`, so the cargo test suite needs python3 on PATH;
+              # without it backticks::trailing_newlines_are_stripped fails with
+              # "could not find the shell". Not otherwise used by the fork.
+              python3
+            ]
+            ++ [
+              # sweatfile's per-commit repair hook (conformist#47/#51):
+              # `conformist-pre-commit`, built from THIS repo's own
+              # `conformistEval` (not a second evalModule call) so the
+              # staged-file repair uses the exact same pinned
+              # rustfmt/nixfmt/linter set as `nix fmt` and
+              # `checks.formatting`.
+              conformistEval.config.build.preCommit
+            ];
         };
       }
     )

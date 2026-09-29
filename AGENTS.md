@@ -157,10 +157,20 @@ repo never evaluates, so `bats.inputs.conformist.follows = "conformist"`
 collapses what would otherwise be two independently-locked copies of
 the same repo.
 
-One deliberate exception: `nixpkgs` is upstream `NixOS/nixpkgs`, not
-the fork, because `packages.default` is meant to build for upstream
-consumers on a stock tree. That is also why none of the above touches
-it — the upstream-facing derivation stays on stock `nixpkgs`.
+`nixpkgs`/`nixpkgs-master` follow the fleet's Stable-First Nixpkgs
+Convention (eng AGENTS.md), not the "stock, upstream-facing" carve-out
+this repo used before it joined `circus cascade`: `nixpkgs` tracks the
+stable release branch (`nixos-25.11`) and `nixpkgs-master` is a SHA
+literal, bumped only by the cascade (never `nix flake update
+nixpkgs-master`). `packages.default` (the shipped `just` binary)
+builds from stable `pkgs`, matching the convention's "runtimes, core
+tools" rule and every other fleet repo's `packages.default` — see the
+`just` derivation's own comment in `flake.nix` for the full rationale.
+`pkgs-master` is bound but not consumed by any output today: mixing
+`pkgs`/`pkgs-master` versions for the Rust toolchain would break
+`cargo clippy` (clippy must match the exact rustc/nixpkgs revision it
+was built against), so the devShell stays entirely on stable `pkgs`
+too.
 
 ## Upstream resyncs
 
