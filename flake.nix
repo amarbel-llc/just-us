@@ -31,6 +31,8 @@
     # doesn't use any amarbel-llc overlay) or nixpkgs-master's
     # faster-moving pin — see the Stable-First comment above.
     igloo.url = "https://code.linenisgreat.com/igloo/archive/master.tar.gz";
+    igloo.inputs.systems.follows = "flake-utils/systems";
+    igloo.inputs.nixpkgs-master.follows = "nixpkgs-master";
 
     # bats helper libraries + the `batsLane` builder (see bats-lane(7)).
     # Used only for the `bats-*` flake outputs.
@@ -52,6 +54,8 @@
       # into one.
       inputs.conformist.follows = "conformist";
     };
+    bats.inputs.utils.follows = "flake-utils";
+    bats.inputs.nixpkgs-master.follows = "nixpkgs-master";
 
     # conformist (formatter/linter multiplexer) supplies `nix fmt`, the
     # read-only `checks.formatting` gate, and the eng conformance
@@ -61,6 +65,8 @@
       url = "https://code.linenisgreat.com/conformist/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
     };
+    conformist.inputs.utils.follows = "flake-utils";
+    conformist.inputs.nixpkgs-master.follows = "nixpkgs-master";
 
     # Supplies `ringmaster`, the job-platform CLI `run_recipe`'s async
     # mode shells out to (docs/features/0006 addendum: subprocess
@@ -74,6 +80,11 @@
     # only realizes that one attribute, not clown's whole (large) output
     # set.
     clown.url = "https://code.linenisgreat.com/clown/archive/master.tar.gz";
+    clown.inputs.bats.follows = "bats";
+    clown.inputs.conformist.follows = "conformist";
+    clown.inputs.utils.follows = "flake-utils";
+    clown.inputs.igloo.follows = "igloo";
+    clown.inputs.nixpkgs-master.follows = "nixpkgs-master";
   };
 
   outputs =
