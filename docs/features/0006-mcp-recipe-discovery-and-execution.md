@@ -282,9 +282,13 @@ in a stub that never returns), not something a deployment should set.
   completion+wake round trip — those were verified by manual smoke test
   instead.
 - Each `tools/call` runs on its own scoped thread (just-us#43); every
-  other method is answered inline. `Justfile` holds `Rc`s and is not
-  `Sync`, but nothing shares one — each call compiles its own — so only
-  `Config`/`Search` cross threads. Replies may arrive out of request
+  other method is answered inline. `Justfile` is `Send + Sync` (it holds
+  `Arc<Recipe>`; a compile-time assertion in `src/mcp_serve.rs` keeps
+  that true across upstream resyncs), but a `Justfile<'src>` borrows its
+  source from the `Loader`'s arena and can't outlive the request that
+  compiled it, so each call compiles its own and only `Config`/`Search`
+  cross threads. Caching a compilation across requests would need a
+  `'static` owner for it (just-us#44). Replies may arrive out of request
   order (JSON-RPC permits it); `write_response` holds the stdout lock
   per line. A `notifications/cancelled` for an in-flight call is now
   honored: a sync `run_recipe`'s process group is torn down and no reply

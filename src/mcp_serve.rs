@@ -205,6 +205,17 @@ fn serve_requests<'scope, 'env>(
   Ok(())
 }
 
+// `Justfile` is `Send + Sync` (it holds `Arc<Recipe>`, no `Rc`/`RefCell`),
+// so thread-safety never blocks sharing a compilation across tool-call
+// threads; its `'src` borrow of the `Loader`'s arena does (just-us#44).
+// Checked at compile time so a future upstream resync that reintroduces a
+// non-thread-safe field fails the build rather than silently falsifying
+// that premise.
+const _: fn() = || {
+  fn assert_send_sync<T: Send + Sync>() {}
+  assert_send_sync::<Justfile<'static>>();
+};
+
 fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<T> {
   mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
