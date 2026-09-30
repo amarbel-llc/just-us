@@ -17,6 +17,9 @@
 //! about the child's read end. So the pipe is made here and its read end
 //! duplicated -- one copy becomes the child's stdin, one stays behind -- which
 //! is exactly the relationship a spawned recipe used to have with this stdin.
+//!
+//! The just-us#43 tests below share the same harness: concurrent tool calls,
+//! and `notifications/cancelled` tearing an in-flight `run_recipe` down.
 
 use super::*;
 
@@ -155,6 +158,40 @@ impl Server {
     );
   }
 
+  fn run_recipe(&mut self, id: u32, recipe: &str) {
+    self.send(
+      format!(
+        r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"run_recipe","arguments":{{"recipe":"{recipe}"}}}}}}"#
+      )
+      .as_bytes(),
+    );
+    self.send(b"\n");
+  }
+
+  fn cancel(&mut self, id: u32) {
+    self.send(
+      format!(
+        r#"{{"jsonrpc":"2.0","method":"notifications/cancelled","params":{{"requestId":{id},"reason":"test"}}}}"#
+      )
+      .as_bytes(),
+    );
+    self.send(b"\n");
+  }
+
+  /// The id of whichever response arrives next — for tests where replies
+  /// may legitimately come back out of request order.
+  #[track_caller]
+  fn next_response_id(&self) -> u64 {
+    let response = self
+      .responses
+      .recv_timeout(RESPONSE_TIMEOUT)
+      .expect("no response: the server died or stopped answering");
+
+    serde_json::from_str::<serde_json::Value>(&response).unwrap()["id"]
+      .as_u64()
+      .unwrap_or_else(|| panic!("response without a numeric id: {response}"))
+  }
+
   /// End of input ends the request loop, so the server should exit 0 promptly
   /// once its stdin is closed -- and in particular must not have been left
   /// spinning on a descriptor it failed to restore to blocking mode.
@@ -261,6 +298,122 @@ fn eagain_inside_a_multibyte_character_does_not_corrupt_the_request() {
   server.expect_response(7, "after an EAGAIN split a multi-byte character");
 
   server.expect_clean_exit();
+}
+
+/// just-us#43: a slow sync `run_recipe` must not hold the whole server
+/// hostage. Each `tools/call` runs on its own thread, so a `tools/list` sent
+/// while the recipe is still running is answered at once, and the recipe's
+/// own reply still arrives once it finishes.
+#[test]
+fn slow_run_recipe_does_not_block_other_requests() {
+  let tmp = slow_recipe_fixture();
+  let mut server = Server::start(tmp.path());
+
+  server.run_recipe(2, "slow");
+  thread::sleep(SETTLE);
+
+  let sent_at = Instant::now();
+  server.tools_list(3);
+
+  assert_eq!(
+    server.next_response_id(),
+    3,
+    "tools/list should overtake the slow recipe"
+  );
+
+  let latency = sent_at.elapsed();
+
+  assert!(
+    latency < Duration::from_secs(2),
+    "tools/list took {latency:?} behind a {SLOW_RECIPE_SECONDS}s recipe: requests are still serialized"
+  );
+
+  assert_eq!(
+    server.next_response_id(),
+    2,
+    "the slow recipe should still be answered"
+  );
+  assert!(
+    tmp.path().join("finished").exists(),
+    "the slow recipe should have run to completion"
+  );
+
+  server.expect_clean_exit();
+}
+
+/// just-us#43: an MCP `notifications/cancelled` for an in-flight sync
+/// `run_recipe` must tear down the recipe's process tree and, per the MCP
+/// spec, send no reply for it. Before the fix the cancel was dropped: the
+/// abandoned recipe ran to completion and, the server being serial, every
+/// later request queued behind it.
+#[test]
+fn cancelled_run_recipe_is_torn_down_and_not_answered() {
+  let tmp = slow_recipe_fixture();
+  let mut server = Server::start(tmp.path());
+
+  server.run_recipe(2, "slow");
+  thread::sleep(SETTLE);
+
+  server.cancel(2);
+
+  let sent_at = Instant::now();
+  server.tools_list(3);
+
+  assert_eq!(server.next_response_id(), 3);
+  assert!(sent_at.elapsed() < Duration::from_secs(2));
+
+  // Outlast the recipe: had it survived the cancel, it would have finished
+  // (and been answered) by now.
+  thread::sleep(Duration::from_secs(SLOW_RECIPE_SECONDS + 1));
+
+  assert!(
+    !tmp.path().join("finished").exists(),
+    "the cancelled recipe ran to completion"
+  );
+
+  server.tools_list(4);
+  assert_eq!(
+    server.next_response_id(),
+    4,
+    "a cancelled request must not be answered"
+  );
+
+  server.expect_clean_exit();
+}
+
+/// just-us#43: end of input with a tool call still in flight must not leave
+/// the recipe running behind a departed client, nor hold the exit hostage
+/// until the recipe finishes on its own.
+#[test]
+fn end_of_input_tears_down_in_flight_run_recipe() {
+  let tmp = slow_recipe_fixture();
+  let mut server = Server::start(tmp.path());
+
+  server.run_recipe(2, "slow");
+  thread::sleep(SETTLE);
+
+  server.expect_clean_exit();
+
+  thread::sleep(Duration::from_secs(SLOW_RECIPE_SECONDS + 1));
+
+  assert!(
+    !tmp.path().join("finished").exists(),
+    "the in-flight recipe outlived the server"
+  );
+}
+
+const SLOW_RECIPE_SECONDS: u64 = 3;
+
+/// A recipe slow enough to still be running when a test acts on it, which
+/// leaves a `finished` marker only if it runs to completion.
+fn slow_recipe_fixture() -> TempDir {
+  let tmp = tempdir();
+  fs::write(
+    tmp.path().join("justfile"),
+    format!("slow:\n  sleep {SLOW_RECIPE_SECONDS}\n  touch finished\n"),
+  )
+  .unwrap();
+  tmp
 }
 
 /// just-us#39: `--mcp` launched from a directory with no justfile anywhere

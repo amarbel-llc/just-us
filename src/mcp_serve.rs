@@ -3,9 +3,11 @@ use super::*;
 use {
   crate::recipe_model::ModelRecipe,
   std::{
+    collections::HashMap,
     io::BufRead,
     io::Read,
     sync::{
+      Arc, Mutex, MutexGuard, PoisonError,
       atomic::{AtomicBool, Ordering},
       mpsc,
     },
@@ -45,8 +47,21 @@ const SYSTEM_PROMPT_NAME: &str = "system-prompt-append";
 /// as the very first message, with no preceding `initialize`
 /// (docs/features/0005) — so every request is answered independently of
 /// what came before it. JSON-RPC notifications (no `id`) are read and
-/// silently dropped: this server has no method that produces a side
-/// effect worth acting on without a reply.
+/// dropped, except `notifications/cancelled` (see below).
+///
+/// Concurrent tool calls (just-us#43): each `tools/call` runs on its own
+/// scoped thread while this thread keeps reading requests, so one slow
+/// call — a long sync `run_recipe`, above all — never queues every later
+/// request behind it. Every other method is cheap and answered inline.
+/// Replies can therefore arrive out of request order, which JSON-RPC
+/// permits; `write_response` holds the stdout lock for a whole line so
+/// two never interleave. A `notifications/cancelled` naming an in-flight
+/// call cancels it: a sync `run_recipe`'s process group is torn down and,
+/// per the MCP spec, no reply is sent for the cancelled request. Until
+/// this, cancels were dropped, the abandoned recipe ran to completion and
+/// the serial loop kept the whole server hostage to it. End of input
+/// cancels everything still in flight before exiting, so a departed
+/// client never leaves recipe process trees running behind it.
 ///
 /// No `Compilation` is held across requests (just-us#38): this process is
 /// long-lived (one `just --mcp` per agent session), so a `Compilation`
@@ -70,13 +85,51 @@ const SYSTEM_PROMPT_NAME: &str = "system-prompt-append";
 pub(crate) fn run(config: &Config, search: Option<&Search>) -> RunResult<'static> {
   let stdin = io::stdin();
   let mut reader = stdin.lock();
-  let mut stdout = io::stdout();
+  let stdout = io::stdout();
+  let in_flight = InFlight::default();
+  // A reply that fails to write on a tool-call thread can't return the
+  // error itself; it's parked here and surfaced by the request loop.
+  let worker_write_error = Mutex::new(None::<io::Error>);
+
+  thread::scope(|scope| {
+    let result = serve_requests(
+      scope,
+      &mut reader,
+      &stdout,
+      &in_flight,
+      &worker_write_error,
+      config,
+      search,
+    );
+
+    // Whatever ended the loop, nothing is left to hear a reply: tear down
+    // every in-flight call before the scope joins its thread, or a long
+    // recipe would hold the exit hostage and outlive the session.
+    in_flight.cancel_all();
+
+    result
+  })
+}
+
+fn serve_requests<'scope, 'env>(
+  scope: &'scope thread::Scope<'scope, 'env>,
+  reader: &mut io::StdinLock<'static>,
+  stdout: &'env io::Stdout,
+  in_flight: &'env InFlight,
+  worker_write_error: &'env Mutex<Option<io::Error>>,
+  config: &'env Config,
+  search: Option<&'env Search>,
+) -> RunResult<'static> {
   let mut line = Vec::new();
 
   loop {
     line.clear();
 
-    read_request_line(&mut reader, &mut line).map_err(|io_error| Error::McpIo { io_error })?;
+    read_request_line(reader, &mut line).map_err(|io_error| Error::McpIo { io_error })?;
+
+    if let Some(io_error) = lock_ignoring_poison(worker_write_error).take() {
+      return Err(Error::McpIo { io_error });
+    }
 
     // The one place the loop ends: `read_request_line` only returns with
     // `line` still empty at end of input.
@@ -101,25 +154,113 @@ pub(crate) fn run(config: &Config, search: Option<&Search>) -> RunResult<'static
       continue;
     };
 
+    let method = request.get("method").and_then(serde_json::Value::as_str);
+
     let Some(id) = request.get("id").cloned() else {
+      if method == Some("notifications/cancelled") {
+        if let Some(request_id) = request.pointer("/params/requestId") {
+          in_flight.cancel(request_id);
+        }
+      }
+
       continue;
     };
-
-    let method = request.get("method").and_then(serde_json::Value::as_str);
 
     let response = match method {
       Some("initialize") => ok(id, initialize_result()),
       Some("prompts/list") => ok(id, prompts_list_result()),
       Some("prompts/get") => prompts_get(id, &request, config, search),
       Some("tools/list") => ok(id, tools_list_result()),
-      Some("tools/call") => tools_call(id, &request, config, search),
+      Some("tools/call") => {
+        let cancellation = in_flight.register(&id);
+
+        scope.spawn(move || {
+          let response = tools_call(id.clone(), &request, config, search, &cancellation);
+
+          in_flight.finish(&id, &cancellation);
+
+          if cancellation.is_cancelled() {
+            return;
+          }
+
+          if let Err(io_error) = write_response(stdout, &response) {
+            lock_ignoring_poison(worker_write_error).get_or_insert(io_error);
+          }
+        });
+
+        continue;
+      }
       _ => error(id, -32601, "method not found"),
     };
 
-    write_response(&mut stdout, &response).map_err(|io_error| Error::McpIo { io_error })?;
+    write_response(stdout, &response).map_err(|io_error| Error::McpIo { io_error })?;
   }
 
   Ok(())
+}
+
+fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<T> {
+  mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// A cancel flag for one in-flight `tools/call`. Only ever set: the code
+/// doing the work polls it (`wait_for_exit`), and tears down its own
+/// child itself, so no pid ever has to cross threads.
+#[derive(Default)]
+struct Cancellation(AtomicBool);
+
+impl Cancellation {
+  fn cancel(&self) {
+    self.0.store(true, Ordering::SeqCst);
+  }
+
+  fn is_cancelled(&self) -> bool {
+    self.0.load(Ordering::SeqCst)
+  }
+}
+
+/// Every `tools/call` currently running, keyed by its JSON-RPC id as
+/// serialized JSON (so `2` and `"2"` stay distinct, as the spec requires).
+#[derive(Default)]
+struct InFlight(Mutex<HashMap<String, Arc<Cancellation>>>);
+
+impl InFlight {
+  fn register(&self, id: &serde_json::Value) -> Arc<Cancellation> {
+    let cancellation = Arc::new(Cancellation::default());
+
+    lock_ignoring_poison(&self.0).insert(id.to_string(), Arc::clone(&cancellation));
+
+    cancellation
+  }
+
+  /// Drop `id`'s entry — but only if it's still `cancellation`'s own: a
+  /// client that reuses an id while the first call is running mustn't
+  /// have the second call's entry removed by the first finishing.
+  fn finish(&self, id: &serde_json::Value, cancellation: &Arc<Cancellation>) {
+    let mut calls = lock_ignoring_poison(&self.0);
+    let key = id.to_string();
+
+    if calls
+      .get(&key)
+      .is_some_and(|current| Arc::ptr_eq(current, cancellation))
+    {
+      calls.remove(&key);
+    }
+  }
+
+  /// Cancel `request_id` if it's in flight; an unknown or already
+  /// finished id is ignored (the spec allows a cancel to race the reply).
+  fn cancel(&self, request_id: &serde_json::Value) {
+    if let Some(cancellation) = lock_ignoring_poison(&self.0).get(&request_id.to_string()) {
+      cancellation.cancel();
+    }
+  }
+
+  fn cancel_all(&self) {
+    for cancellation in lock_ignoring_poison(&self.0).values() {
+      cancellation.cancel();
+    }
+  }
 }
 
 /// How long to wait before retrying a stdio operation that reported
@@ -230,8 +371,12 @@ fn read_request_line(reader: &mut io::StdinLock<'static>, line: &mut Vec<u8>) ->
 /// transient stdio errors the same way `read_request_line` does. Tracks
 /// its own offset into the serialized line rather than going through
 /// `write!`, whose `write_all` cannot report how much of a partial write
-/// landed before the error and so is not safe to retry.
-fn write_response(stdout: &mut io::Stdout, response: &serde_json::Value) -> io::Result<()> {
+/// landed before the error and so is not safe to retry. Holds the stdout
+/// lock for the whole line: replies come from concurrent tool-call
+/// threads, and `Stdout`'s own per-`write` locking would let two partial
+/// writes interleave into garbage (just-us#43).
+fn write_response(stdout: &io::Stdout, response: &serde_json::Value) -> io::Result<()> {
+  let mut stdout = stdout.lock();
   let line = format!("{response}\n");
   let mut remaining = line.as_bytes();
 
@@ -240,7 +385,7 @@ fn write_response(stdout: &mut io::Stdout, response: &serde_json::Value) -> io::
       Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
       Ok(written) => remaining = &remaining[written..],
       Err(io_error) => {
-        if !recover_stdio_error(&io_error, &*stdout) {
+        if !recover_stdio_error(&io_error, &stdout) {
           return Err(io_error);
         }
       }
@@ -251,7 +396,7 @@ fn write_response(stdout: &mut io::Stdout, response: &serde_json::Value) -> io::
     match stdout.flush() {
       Ok(()) => return Ok(()),
       Err(io_error) => {
-        if !recover_stdio_error(&io_error, &*stdout) {
+        if !recover_stdio_error(&io_error, &stdout) {
           return Err(io_error);
         }
       }
@@ -615,6 +760,7 @@ fn tools_call(
   request: &serde_json::Value,
   config: &Config,
   search: Option<&Search>,
+  cancellation: &Cancellation,
 ) -> serde_json::Value {
   let Some(params) = request.get("params") else {
     return error(id, -32602, "missing params");
@@ -755,7 +901,7 @@ fn tools_call(
           )
         } else {
           let command = recipe_command(run_dir, flake_dir.clone(), impure, &invocation);
-          run_recipe_sync(command, recipe_dir, flake_dir, timeout)
+          run_recipe_sync(command, recipe_dir, flake_dir, timeout, cancellation)
         },
       )
     }
@@ -850,8 +996,8 @@ fn ringmaster_command() -> Command {
 /// Bound on each `ringmaster` CLI call the async dispatch path makes
 /// (`start`, `spool-path`, `done`). Every one of them is a local journal
 /// write that should take milliseconds; one that hangs (a wedged nudge
-/// socket, a stalled filesystem) used to block the tool call — and, this
-/// server being serial, every request queued behind it — indefinitely
+/// socket, a stalled filesystem) used to block the tool call — and, while
+/// this server was serial, every request queued behind it — indefinitely
 /// (just-us#34). `async: true` must either create the job or error.
 const RINGMASTER_CALL_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -864,7 +1010,7 @@ fn ringmaster_call(args: &[&str]) -> Result<String, String> {
   let mut command = ringmaster_command();
   command.args(args);
 
-  let captured = run_captured(command, Some(RINGMASTER_CALL_TIMEOUT))
+  let captured = run_captured(command, Some(RINGMASTER_CALL_TIMEOUT), None)
     .map_err(|io_error| format!("ringmaster is not available: {io_error}"))?;
 
   match captured.status {
@@ -1072,12 +1218,15 @@ fn kill_process_tree(child: &mut process::Child) {
 }
 
 /// Block on `child`, killing it (and its process tree — see
-/// `kill_process_tree`) if `timeout` elapses first. `Ok(None)` means it
-/// was killed for timing out; the caller distinguishes that from a
-/// normal exit status.
-fn wait_with_timeout(
+/// `kill_process_tree`) if `timeout` elapses or `cancellation` is set
+/// first. `Ok(None)` means it was killed for either reason; the caller
+/// distinguishes that from a normal exit status (and a cancelled call's
+/// caller discards the result anyway). Polls rather than blocking in
+/// `wait` even with neither bound, so a cancel is noticed within one poll.
+fn wait_for_exit(
   child: &mut process::Child,
-  timeout: Duration,
+  timeout: Option<Duration>,
+  cancellation: Option<&Cancellation>,
 ) -> io::Result<Option<ExitStatus>> {
   let start = Instant::now();
 
@@ -1086,7 +1235,10 @@ fn wait_with_timeout(
       return Ok(Some(status));
     }
 
-    if start.elapsed() >= timeout {
+    let timed_out = timeout.is_some_and(|timeout| start.elapsed() >= timeout);
+    let cancelled = cancellation.is_some_and(Cancellation::is_cancelled);
+
+    if timed_out || cancelled {
       kill_process_tree(child);
       return Ok(None);
     }
@@ -1177,7 +1329,11 @@ fn collect_until(receiver: &mpsc::Receiver<Vec<u8>>, deadline: Instant) -> (Vec<
 /// with `EAGAIN` and killed the server for the rest of the session
 /// (just-us#36). A recipe reading stdin would also have eaten the
 /// JSON-RPC requests queued behind its own tool call.
-fn run_captured(mut command: Command, timeout: Option<Duration>) -> io::Result<Captured> {
+fn run_captured(
+  mut command: Command,
+  timeout: Option<Duration>,
+  cancellation: Option<&Cancellation>,
+) -> io::Result<Captured> {
   command.stdin(Stdio::null());
   command.stdout(Stdio::piped());
   command.stderr(Stdio::piped());
@@ -1190,10 +1346,7 @@ fn run_captured(mut command: Command, timeout: Option<Duration>) -> io::Result<C
   let stdout_receiver = drain_in_background(child.stdout.take());
   let stderr_receiver = drain_in_background(child.stderr.take());
 
-  let status = match timeout {
-    Some(timeout) => wait_with_timeout(&mut child, timeout),
-    None => child.wait().map(Some),
-  };
+  let status = wait_for_exit(&mut child, timeout, cancellation);
 
   let deadline = Instant::now() + PIPE_DRAIN_GRACE;
   let (stdout, stdout_drained) = collect_until(&stdout_receiver, deadline);
@@ -1216,13 +1369,14 @@ fn run_recipe_sync(
   recipe_dir: PathBuf,
   flake_dir: Option<PathBuf>,
   timeout: Option<Duration>,
+  cancellation: &Cancellation,
 ) -> serde_json::Value {
   let Captured {
     status,
     stdout,
     stderr,
     drained,
-  } = match run_captured(command, timeout) {
+  } = match run_captured(command, timeout, Some(cancellation)) {
     Ok(captured) => captured,
     Err(io_error) => return tool_error_text(format!("failed to start recipe: {io_error}")),
   };
@@ -1425,10 +1579,10 @@ fn run_recipe_async(
         #[cfg(unix)]
         spawn_cancel_observer(cancel_job_id, child.id(), Arc::clone(&cancelled));
 
-        let status = match timeout {
-          Some(timeout) => wait_with_timeout(&mut child, timeout),
-          None => child.wait().map(Some),
-        };
+        // Cancellation here comes through ringmaster's own job_cancel
+        // (`spawn_cancel_observer`), not the MCP request's: by now the
+        // tool call has long since returned its job id.
+        let status = wait_for_exit(&mut child, timeout, None);
 
         if cancelled.load(Ordering::SeqCst) {
           ("aborted", "cancelled via ringmaster job_cancel".to_owned())

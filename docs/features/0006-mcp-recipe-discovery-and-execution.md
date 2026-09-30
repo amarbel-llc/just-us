@@ -281,14 +281,20 @@ in a stub that never returns), not something a deployment should set.
   cooperative cancel, but not devshell-wrapping or a full async
   completion+wake round trip — those were verified by manual smoke test
   instead.
-- The server handles requests serially (one stdin line at a time, no
-  per-request thread — `Justfile` holds `Rc`s and is not `Sync`). Every
-  handler is now bounded, so a slow sync `run_recipe` (no `timeout`)
-  still delays later calls only for as long as the recipe itself runs,
-  never past its exit; but a client-side cancel (TaskStop) cannot reach
-  the server, so a sync call without `timeout` on a genuinely
-  never-ending recipe still blocks the server until that recipe ends.
-  Pass `timeout` or use `async` for anything open-ended.
+- Each `tools/call` runs on its own scoped thread (just-us#43); every
+  other method is answered inline. `Justfile` holds `Rc`s and is not
+  `Sync`, but nothing shares one — each call compiles its own — so only
+  `Config`/`Search` cross threads. Replies may arrive out of request
+  order (JSON-RPC permits it); `write_response` holds the stdout lock
+  per line. A `notifications/cancelled` for an in-flight call is now
+  honored: a sync `run_recipe`'s process group is torn down and no reply
+  is sent, per the MCP spec. Until then, the server was serial and
+  dropped cancels, so an abandoned sync call kept running and queued
+  every later request — including an `async` call's job-id reply —
+  behind it. End of input cancels everything in flight before exit.
+  Only sync `run_recipe` has a child to tear down; the other tools
+  (compiles, the child-justfile walk, `list_variables`' backtick
+  evaluation) run to completion and merely have their reply dropped.
 - Still no Rust MCP SDK: `tools/list`/`tools/call` are hand-parsed
   JSON-RPC, same as FDR 0005's `prompts/*`. Revisit if/when FDR 0004's
   FUSE/editing facets need something richer.
