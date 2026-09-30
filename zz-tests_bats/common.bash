@@ -31,3 +31,11 @@ run_just() {
   local bin="${JUST_BIN:-just}"
   run timeout --preserve-status 5s "$bin" "$@"
 }
+
+# The `just --mcp` reply to JSON-RPC request id $1, picked out of the
+# reply stream on stdin. Select by id, never by line position: tool calls
+# run concurrently, so replies arrive in completion order, not request
+# order (just-us#43). Replies serialize with `id` as their first key.
+mcp_reply_for_id() {
+  grep -F "{\"id\":$1," || true
+}

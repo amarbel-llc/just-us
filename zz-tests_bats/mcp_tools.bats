@@ -120,9 +120,9 @@ EOF
   run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" "$requests"
   assert_success
 
-  first_reply=$(echo "$output" | sed -n '1p')
-  second_reply=$(echo "$output" | sed -n '2p')
-  third_reply=$(echo "$output" | sed -n '3p')
+  first_reply=$(echo "$output" | mcp_reply_for_id 1)
+  second_reply=$(echo "$output" | mcp_reply_for_id 2)
+  third_reply=$(echo "$output" | mcp_reply_for_id 3)
 
   [[ $first_reply == *'\"namepath\":\"build\"'* ]] || fail "list_recipes missing build: $first_reply"
   [[ $first_reply != *'_hidden'* ]] || fail "list_recipes leaked private recipe: $first_reply"
@@ -200,8 +200,8 @@ EOF
   run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" "$requests"
   assert_success
 
-  compact_reply=$(echo "$output" | sed -n '1p')
-  verbose_reply=$(echo "$output" | sed -n '2p')
+  compact_reply=$(echo "$output" | mcp_reply_for_id 1)
+  verbose_reply=$(echo "$output" | mcp_reply_for_id 2)
 
   [[ $compact_reply == *'\"namepath\":\"build\"'* ]] || fail "compact list_recipes missing namepath: $compact_reply"
   [[ $compact_reply == *'\"parameters\":[\"name\"]'* ]] || fail "compact list_recipes missing parameters: $compact_reply"
@@ -234,10 +234,10 @@ EOF
   run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" "$requests"
   assert_success
 
-  default_list=$(echo "$output" | sed -n '1p')
-  deep_list=$(echo "$output" | sed -n '2p')
-  default_show=$(echo "$output" | sed -n '3p')
-  deep_show=$(echo "$output" | sed -n '4p')
+  default_list=$(echo "$output" | mcp_reply_for_id 1)
+  deep_list=$(echo "$output" | mcp_reply_for_id 2)
+  default_show=$(echo "$output" | mcp_reply_for_id 3)
+  deep_show=$(echo "$output" | mcp_reply_for_id 4)
 
   [[ $default_list != *'depth4_recipe'* ]] || fail "default max_depth should not reach depth 4: $default_list"
   [[ $deep_list == *'\"namepath\":\"a/b/c/depth4_recipe\"'* ]] || fail "max_depth:4 should reach the depth-4 recipe: $deep_list"
@@ -324,9 +324,9 @@ EOF
   kill "$mcp_pid" 2>/dev/null || true
   wait "$mcp_pid" 2>/dev/null || true
 
-  build_after=$(sed -n '2p' mcp.out)
-  new_thing=$(sed -n '3p' mcp.out)
-  list_after=$(sed -n '4p' mcp.out)
+  build_after=$(mcp_reply_for_id 2 <mcp.out)
+  new_thing=$(mcp_reply_for_id 3 <mcp.out)
+  list_after=$(mcp_reply_for_id 4 <mcp.out)
 
   [[ $build_after == *'new doc'* ]] || fail "show_recipe(build) still returned the stale pre-edit doc: $build_after"
   [[ $build_after != *'old doc'* ]] || fail "show_recipe(build) leaked the stale pre-edit doc: $build_after"
@@ -378,8 +378,8 @@ EOF
     '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
   assert_success
 
-  first_reply=$(echo "$output" | sed -n '1p')
-  second_reply=$(echo "$output" | sed -n '2p')
+  first_reply=$(echo "$output" | mcp_reply_for_id 1)
+  second_reply=$(echo "$output" | mcp_reply_for_id 2)
 
   [[ $first_reply == *'"id":1'* ]] || fail "no reply to the run_recipe call: $first_reply"
   [[ $first_reply != *'tools/list'* ]] || fail "the recipe read the server's own stdin and swallowed the next request: $first_reply"
@@ -407,8 +407,8 @@ EOF
   run --separate-stderr timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" "$requests"
   assert_success
 
-  first_reply=$(echo "$output" | sed -n '1p')
-  second_reply=$(echo "$output" | sed -n '2p')
+  first_reply=$(echo "$output" | mcp_reply_for_id 1)
+  second_reply=$(echo "$output" | mcp_reply_for_id 2)
 
   [[ $first_reply == *'"isError":true'* ]] || fail "failing recipe should set isError: $first_reply"
   [[ $first_reply == *'exit code 3'* ]] || fail "failure message missing exit code: $first_reply"
@@ -723,8 +723,8 @@ EOF
   run timeout --preserve-status 5s bash -c '"$0" --mcp <<<"$1"' "${JUST_BIN:-just}" "$requests"
   assert_success
 
-  list_reply=$(echo "$output" | sed -n '1p')
-  run_reply=$(echo "$output" | sed -n '2p')
+  list_reply=$(echo "$output" | mcp_reply_for_id 1)
+  run_reply=$(echo "$output" | mcp_reply_for_id 2)
 
   [[ $list_reply != *'depth4_recipe'* ]] || fail "list_recipes's default max_depth should not surface the depth-4 recipe: $list_reply"
   [[ $run_reply == *'depth4'* ]] || fail "run_recipe should reach and run the depth-4 recipe despite list_recipes's default depth limit: $run_reply"

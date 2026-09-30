@@ -59,9 +59,10 @@ const SYSTEM_PROMPT_NAME: &str = "system-prompt-append";
 /// call cancels it: a sync `run_recipe`'s process group is torn down and,
 /// per the MCP spec, no reply is sent for the cancelled request. Until
 /// this, cancels were dropped, the abandoned recipe ran to completion and
-/// the serial loop kept the whole server hostage to it. End of input
-/// cancels everything still in flight before exiting, so a departed
-/// client never leaves recipe process trees running behind it.
+/// the serial loop kept the whole server hostage to it. End of input lets
+/// in-flight calls finish and reply before exiting (a client may
+/// half-close stdin after its last request); only broken stdio cancels
+/// them.
 ///
 /// No `Compilation` is held across requests (just-us#38): this process is
 /// long-lived (one `just --mcp` per agent session), so a `Compilation`
@@ -102,10 +103,15 @@ pub(crate) fn run(config: &Config, search: Option<&Search>) -> RunResult<'static
       search,
     );
 
-    // Whatever ended the loop, nothing is left to hear a reply: tear down
-    // every in-flight call before the scope joins its thread, or a long
-    // recipe would hold the exit hostage and outlive the session.
-    in_flight.cancel_all();
+    // A clean end of input is NOT a departed client: `just --mcp
+    // <<<"$request"` half-closes stdin right after its last request and
+    // still expects the reply, so in-flight calls finish and answer
+    // before the scope joins them. Only broken stdio means nobody is left
+    // to hear a reply; then tear everything down rather than let a long
+    // recipe hold the exit hostage.
+    if result.is_err() {
+      in_flight.cancel_all();
+    }
 
     result
   })

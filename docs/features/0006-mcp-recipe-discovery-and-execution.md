@@ -291,7 +291,10 @@ in a stub that never returns), not something a deployment should set.
   is sent, per the MCP spec. Until then, the server was serial and
   dropped cancels, so an abandoned sync call kept running and queued
   every later request — including an `async` call's job-id reply —
-  behind it. End of input cancels everything in flight before exit.
+  behind it. End of input lets in-flight calls finish and reply (a
+  client may half-close stdin after its last request); only broken
+  stdio cancels them, so a client that dies without closing its pipes
+  cleanly can still leave a never-ending sync recipe running (#44).
   Only sync `run_recipe` has a child to tear down; the other tools
   (compiles, the child-justfile walk, `list_variables`' backtick
   evaluation) run to completion and merely have their reply dropped.

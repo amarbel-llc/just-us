@@ -195,8 +195,9 @@ impl Server {
   /// End of input ends the request loop, so the server should exit 0 promptly
   /// once its stdin is closed -- and in particular must not have been left
   /// spinning on a descriptor it failed to restore to blocking mode.
+  /// Returns every reply that arrived after stdin was closed.
   #[track_caller]
-  fn expect_clean_exit(mut self) {
+  fn expect_clean_exit(mut self) -> Vec<String> {
     drop(self.requests);
 
     let deadline = Instant::now() + RESPONSE_TIMEOUT;
@@ -204,7 +205,7 @@ impl Server {
     while Instant::now() < deadline {
       if let Some(status) = self.child.try_wait().unwrap() {
         assert!(status.success(), "server exited with {status}");
-        return;
+        return self.responses.iter().collect();
       }
 
       thread::sleep(Duration::from_millis(50));
@@ -381,24 +382,27 @@ fn cancelled_run_recipe_is_torn_down_and_not_answered() {
   server.expect_clean_exit();
 }
 
-/// just-us#43: end of input with a tool call still in flight must not leave
-/// the recipe running behind a departed client, nor hold the exit hostage
-/// until the recipe finishes on its own.
+/// just-us#43: end of input is not a departed client. `just --mcp
+/// <<<"$request"` half-closes stdin right after its last request, so a tool
+/// call still in flight at EOF must run to completion and be answered before
+/// the server exits, exactly as when the server was serial.
 #[test]
-fn end_of_input_tears_down_in_flight_run_recipe() {
+fn end_of_input_still_answers_in_flight_run_recipe() {
   let tmp = slow_recipe_fixture();
   let mut server = Server::start(tmp.path());
 
   server.run_recipe(2, "slow");
   thread::sleep(SETTLE);
 
-  server.expect_clean_exit();
-
-  thread::sleep(Duration::from_secs(SLOW_RECIPE_SECONDS + 1));
+  let replies = server.expect_clean_exit();
 
   assert!(
-    !tmp.path().join("finished").exists(),
-    "the in-flight recipe outlived the server"
+    replies.iter().any(|reply| reply.contains(r#""id":2"#)),
+    "the in-flight run_recipe was not answered after stdin closed: {replies:?}"
+  );
+  assert!(
+    tmp.path().join("finished").exists(),
+    "the in-flight recipe did not run to completion"
   );
 }
 
