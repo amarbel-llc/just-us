@@ -524,6 +524,14 @@ impl<'src, 'run> Evaluator<'src, 'run> {
       cmd.env(key, value);
     }
 
+    // This child's stdout is consumed as *data* (backticks, shell()),
+    // so withdraw any crap RFC 0002 offer tunneling through our
+    // environment: a producer attaching here — stdout is the default
+    // channel — would leak ndjson-crap records into the value.
+    for var in EventSink::OFFER_VARS {
+      cmd.env_remove(var);
+    }
+
     cmd.output_guard_stdout()
   }
 

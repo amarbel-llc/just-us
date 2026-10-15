@@ -122,7 +122,7 @@ pub(crate) use {
   clap::{CommandFactory, FromArgMatches, Parser as _, ValueEnum},
   clap_complete::{ArgValueCompleter, CompletionCandidate, PathCompleter, engine::ValueCompleter},
   lexiclean::Lexiclean,
-  libc::EXIT_FAILURE,
+  libc::{EXIT_FAILURE, EXIT_SUCCESS},
   rand::seq::IndexedRandom,
   regex::Regex,
   serde::{
@@ -227,6 +227,10 @@ mod config_error;
 mod const_error;
 mod constants;
 mod count;
+#[cfg(unix)]
+mod crap_attach;
+#[cfg(unix)]
+mod crap_serve;
 mod delimiter;
 mod dependency;
 mod dump_format;
