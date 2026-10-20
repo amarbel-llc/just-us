@@ -51,10 +51,10 @@ public recipe's namepath + doc line, unfiltered
 subprocess (`nix develop -c` wrapping when a flake.nix is present,
 `impure`/`timeout` parameters, and an `async` mode that's a real
 ringmaster job producer for backgrounding long recipes — see
-`code.linenisgreat.com/clown`'s `ringmaster(1)`) rather than in-process
+`code.linenisgreat.com/ringmaster`'s `ringmaster(1)`) rather than in-process
 (`docs/features/0006-*`). The `ringmaster` binary itself is a
 build-time pin (`RINGMASTER_BIN`, `flake.nix` + `build.rs`), not a PATH
-lookup, via a new `clown` flake input.
+lookup, via a direct `ringmaster` flake input (not through clown).
 Together these are the `tools`/`prompts` slices of a broader, still-
 **proposed** recipe-*editing* MCP surface (FUSE + MCP tool calls,
 `docs/features/0004-*`) that has not been implemented yet.
@@ -142,7 +142,7 @@ linters (agents-md, justfile-default, justfile-orphan-summary).
 Fleet inputs come from `code.linenisgreat.com`, as anonymous HTTPS
 archive tarballs (`https://code.linenisgreat.com/<repo>/archive/master.tar.gz`),
 never a GitHub mirror and never `git+ssh` — the tarball form is what
-lets a downstream consumer relock without SSH and an agent. `clown`,
+lets a downstream consumer relock without SSH and an agent. `ringmaster`,
 `bats`, `conformist` and `igloo` all use it.
 
 `igloo` (the amarbel-llc nixpkgs fork) is declared only so `bats` and

@@ -37,7 +37,7 @@
     # bats helper libraries + the `batsLane` builder (see bats-lane(7)).
     # Used only for the `bats-*` flake outputs.
     #
-    # Canonical host, not the GitHub mirror — same rule as `clown` below.
+    # Canonical host, not the GitHub mirror — same rule as `ringmaster` below.
     #
     # `igloo` is what bats names its nixpkgs-fork input, and following it
     # is safe: bats needs a fork-shaped tree (it reads
@@ -77,14 +77,15 @@
     # `conformist` input under the `bats` input for the established
     # pattern) so downstream consumers don't need SSH + an agent just to
     # relock. Only the `ringmaster` package output is referenced; nix
-    # only realizes that one attribute, not clown's whole (large) output
-    # set.
-    clown.url = "https://code.linenisgreat.com/clown/archive/master.tar.gz";
-    clown.inputs.bats.follows = "bats";
-    clown.inputs.conformist.follows = "conformist";
-    clown.inputs.utils.follows = "flake-utils";
-    clown.inputs.igloo.follows = "igloo";
-    clown.inputs.nixpkgs-master.follows = "nixpkgs-master";
+    # only realizes that one attribute. Taken directly rather than through
+    # clown (just-us#46): going via clown pulled clown's whole input set
+    # into this lock and made juggler/clown pin each other through just-us.
+    ringmaster.url = "https://code.linenisgreat.com/ringmaster/archive/master.tar.gz";
+    ringmaster.inputs.bats.follows = "bats";
+    ringmaster.inputs.conformist.follows = "conformist";
+    ringmaster.inputs.utils.follows = "flake-utils";
+    ringmaster.inputs.igloo.follows = "igloo";
+    ringmaster.inputs.nixpkgs-master.follows = "nixpkgs-master";
   };
 
   outputs =
@@ -127,7 +128,7 @@
         # PATH. Falls back to a PATH lookup (Command::resolve) when unset,
         # which keeps a plain `cargo build` dev-loop working without this
         # input.
-        ringmaster = inputs.clown.packages.${system}.ringmaster;
+        ringmaster = inputs.ringmaster.packages.${system}.ringmaster;
 
         # Builds from stable `pkgs` (nixos-25.11), not `pkgs-master`:
         # `packages.default` is the fork's shipped runtime — exactly

@@ -15,7 +15,7 @@
   bats-libs,
   myBin, # the just binary derivation
   batsSrc,
-  ringmaster, # clown's job-platform CLI; run_recipe's async mode shells out to it
+  ringmaster, # the job-platform CLI; run_recipe's async mode shells out to it
   # 20s, not 10: the run_recipe async ringmaster-hang regression test
   # (just-us#34) has to outlast the server's own 10s bound on
   # `ringmaster start` to observe the error it produces.

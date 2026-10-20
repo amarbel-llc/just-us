@@ -994,8 +994,8 @@ fn tool_error_text(message: String) -> serde_json::Value {
 /// (a runtime hook so a test can stand in a stub for the real binary —
 /// just-us#34's hung-`ringmaster start` regression test needs one that
 /// never returns). Otherwise prefers the build-time pin
-/// (`RINGMASTER_BIN`, set by flake.nix's `just` derivation from clown's
-/// `ringmaster` package — see build.rs) so a nix-built `just` never
+/// (`RINGMASTER_BIN`, set by flake.nix's `just` derivation from the
+/// `ringmaster` flake's package — see build.rs) so a nix-built `just` never
 /// depends on `ringmaster` being ambiently on PATH; falls back to a plain
 /// PATH lookup so an ad-hoc `cargo build` dev-loop still works without
 /// that input.

@@ -224,12 +224,12 @@ hung local journal write must not wedge the serial server). The `done`
 call on completion is bounded the same way.
 
 The `ringmaster` binary itself is a build-time pin, not a PATH lookup: a
-nix-built `just` embeds clown's `ringmaster` package's exact store path
+nix-built `just` embeds the `ringmaster` flake input's `ringmaster` package's exact store path
 (`RINGMASTER_BIN`, set on the `just` derivation in `flake.nix`, forwarded
 by `build.rs` via `option_env!`) — confirmed by Nix's own reference
 scanner picking it up into `just`'s runtime closure automatically. A
 plain `cargo build` (no `RINGMASTER_BIN` set) falls back to a PATH
-lookup, so the dev-loop doesn't need the `clown` flake input. A
+lookup, so the dev-loop doesn't need the `ringmaster` flake input. A
 non-empty `JUST_US_RINGMASTER_BIN` in the runtime environment overrides
 both — a test hook (the hung-`ringmaster start` regression test stands
 in a stub that never returns), not something a deployment should set.
@@ -342,7 +342,7 @@ in a stub that never returns), not something a deployment should set.
   `tools` is added alongside it on the same server.
 - FDR 0003 (`0003-recipe-model.md`) — the `RecipeModel`/`ModelRecipe`
   projection `list_recipes`/`show_recipe` serialize.
-- `code.linenisgreat.com/clown` `ringmaster(1)` — the job-platform CLI
+- `code.linenisgreat.com/ringmaster` `ringmaster(1)` — the job-platform CLI
   `run_recipe`'s async mode shells out to (RFC-0009/0010/0011); its
   EXAMPLES section shows `spinclass`'s own pre-merge-hook job using the
   exact same `start`/`done` pattern this FDR follows.

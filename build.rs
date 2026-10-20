@@ -92,7 +92,7 @@ fn git_describe() -> Option<String> {
 
 // Build-time pin for `run_recipe`'s async (ringmaster) mode
 // (docs/features/0006 addendum). Set by flake.nix's `just` derivation to
-// the store path of clown's `ringmaster` package; unset for a plain
+// the store path of the `ringmaster` flake's package; unset for a plain
 // `cargo build`, in which case `mcp_serve.rs` falls back to a PATH
 // lookup at runtime.
 fn forward_ringmaster_bin() {
